@@ -4,9 +4,9 @@ fast kcp server frame
 # Examples Echo
 ```rust
 #![feature(async_closure)]
-use kcp_server::KcpListener;
-use kcp_server::KcpConfig;
-use kcp_server::KcpNoDelayConfig;
+use kcpserver::KcpListener;
+use kcpserver::KcpConfig;
+use kcpserver::KcpNoDelayConfig;
 use std::error::Error;
 
 #[tokio::main]
