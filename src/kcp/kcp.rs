@@ -49,7 +49,6 @@ pub fn get_conv(buf: &mut Bytes) -> u32 {
 /// Set `conv` to raw buffer
 pub fn set_conv(buf: &mut BytesMut, conv: u32) {
     assert!(buf.len() >= KCP_OVERHEAD);
-    //LittleEndian::write_u32(buf, conv)
 
     buf.put_u32_le(conv)
 }

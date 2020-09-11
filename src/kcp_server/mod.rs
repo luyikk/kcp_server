@@ -3,7 +3,7 @@ mod udp_listener;
 mod udp_server_store;
 mod buff_input_store;
 mod kcp_listener;
-pub mod kcp_config;
 
+pub mod kcp_config;
 pub use udp_server_store::UdpServerStore;
 pub use kcp_listener::KcpListener;
