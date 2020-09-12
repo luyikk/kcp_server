@@ -7,7 +7,7 @@ use crate::kcp_server::buff_input_store::BuffInputStore;
 use std::collections::HashMap;
 use std::net::ToSocketAddrs;
 use std::time::Duration;
-use crate::kcp_server::kcp_config::KcpConfig;
+use crate::kcp::kcp_config::KcpConfig;
 use std::cell::{UnsafeCell, RefCell};
 use std::error::Error;
 use udp_server::{UdpServer, Peer, TokenStore};

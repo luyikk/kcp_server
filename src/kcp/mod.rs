@@ -1,6 +1,6 @@
 mod error;
 mod kcp;
-
+pub mod kcp_config;
 
 
 /// The `KCP` prelude
