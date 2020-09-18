@@ -7,13 +7,13 @@ use crate::kcp_server::buff_input_store::BuffInputStore;
 use std::collections::HashMap;
 use std::net::ToSocketAddrs;
 use std::time::Duration;
-use crate::kcp::kcp_config::KcpConfig;
+use crate::kcp_module::kcp_config::KcpConfig;
 use std::cell::{UnsafeCell, RefCell};
 use std::error::Error;
 use udp_server::{UdpServer, Peer, TokenStore};
 use log::*;
 use bytes::{Bytes, BytesMut, BufMut};
-use crate::kcp::Kcp;
+use crate::kcp_module::Kcp;
 use tokio::time::delay_for;
 use std::future::Future;
 
@@ -207,7 +207,7 @@ impl<S,R> KcpListener<S,R>
 
    /// UDP 数据表输入
    /// 发送回客户端 格式为 [u8;4]+[u8;4] =[u8;8],前面4字节为客户端所发,后面4字节为conv id
-   /// 如果不是第一发包 就将数据表压入到 kcp,之后读取 数据包输出 真实的数据包结构
+   /// 如果不是第一发包 就将数据表压入到 kcp_module,之后读取 数据包输出 真实的数据包结构
     async fn buff_input(
         this: Arc<Self>,
         peer: Arc<Peer<()>>,
@@ -251,7 +251,7 @@ impl<S,R> KcpListener<S,R>
 
         while let Ok(len) = kcp_peer.peeksize().await {
             let mut buff = vec![0; len];
-            if let Ok(_) = kcp_peer.recv(&mut buff).await {
+            if  kcp_peer.recv(&mut buff).await.is_ok() {
                 let p=this.buff_input.get() as usize;
                 if let Some(input)=(*unsafe{std::mem::transmute::<_,&mut BuffInputStore<S,R>>(p)}).get(){
                     input(kcp_peer.clone(),Bytes::from(buff)).await?;
@@ -266,7 +266,7 @@ impl<S,R> KcpListener<S,R>
     /// 读取下发的conv,返回kcp_peer 如果在字典类中存在返回kcp_peer
     /// 否则创建一个kcp_peer 绑定到字典类中
     #[inline]
-    async fn get_kcp_peer(this: &Arc<Self>,peer: Arc<Peer<()>>,data: &Vec<u8>) -> Option<Arc<KcpPeer<S>>> {
+    async fn get_kcp_peer(this: &Arc<Self>,peer: Arc<Peer<()>>,data: &[u8]) -> Option<Arc<KcpPeer<S>>> {
         let mut conv_data = [0; 4];
         conv_data.copy_from_slice(&data[0..4]);
         let conv = u32::from_le_bytes(conv_data);
@@ -284,7 +284,7 @@ impl<S,R> KcpListener<S,R>
             None => {
                 let res = Self::make_kcp_peer_ptr(conv, data, peer.clone(), this.clone()).await;
                 if let Ok(kcp_peer_arc) = res {
-                    let kcp_peer = kcp_peer_arc.clone();
+                    let kcp_peer = kcp_peer_arc;
                     peers_lock.insert(conv, kcp_peer.clone());
                     return Some(kcp_peer);
                 }
@@ -314,7 +314,7 @@ impl<S,R> KcpListener<S,R>
 
     /// 创建一个 kcp_peer_ptr
     #[inline]
-    async fn make_kcp_peer_ptr(conv:u32,buff:&Vec<u8>,peer:Arc<Peer<()>>,this_ptr:Arc<KcpListener<S,R>>)-> Result<Arc<KcpPeer<S>>, Box<dyn Error>>{
+    async fn make_kcp_peer_ptr(conv:u32,buff:&[u8],peer:Arc<Peer<()>>,this_ptr:Arc<KcpListener<S,R>>)-> Result<Arc<KcpPeer<S>>, Box<dyn Error>>{
         let mut kcp = Kcp::new(conv, peer.udp_sock.clone());
         this_ptr.config.apply_config(&mut kcp);
         let kcp_lock= kcp.get_lock();

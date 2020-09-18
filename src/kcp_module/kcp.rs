@@ -10,6 +10,7 @@ use bytes::{Buf, BufMut, BytesMut, Bytes};
 use std::sync::Arc;
 use log::*;
 use udp_server::UdpSend;
+use std::cmp::Ordering;
 
 const KCP_RTO_NDL: u32 = 30;
 const KCP_RTO_MIN: u32 = 100;
@@ -93,7 +94,7 @@ impl KcpSegment {
             rto: 0,
             fastack: 0,
             xmit: 0,
-            data: data,
+            data,
         }
     }
 
@@ -466,11 +467,17 @@ impl Kcp {
         }
 
         for i in 0..self.snd_buf.len() {
-            if sn == self.snd_buf[i].sn {
-                self.snd_buf.remove(i);
-                break;
-            } else if sn < self.snd_buf[i].sn {
-                break;
+            match sn.cmp(&self.snd_buf[i].sn){
+                Ordering::Equal=>{
+                    self.snd_buf.remove(i);
+                    break;
+                },
+                Ordering::Less=>{
+                    break;
+                },
+                _=>{
+                    continue;
+                }
             }
         }
     }
@@ -710,25 +717,23 @@ impl Kcp {
             self.parse_fastack(max_ack);
         }
 
-        if self.snd_una > old_una {
-            if self.cwnd < self.rmt_wnd {
-                let mss = self.mss;
-                if self.cwnd < self.ssthresh {
+        if self.snd_una > old_una && self.cwnd < self.rmt_wnd {
+            let mss = self.mss;
+            if self.cwnd < self.ssthresh {
+                self.cwnd += 1;
+                self.incr += mss;
+            } else {
+                if self.incr < mss {
+                    self.incr = mss;
+                }
+                self.incr += (mss * mss) / self.incr + (mss / 16);
+                if (self.cwnd + 1) as u32 * mss <= self.incr {
                     self.cwnd += 1;
-                    self.incr += mss;
-                } else {
-                    if self.incr < mss {
-                        self.incr = mss;
-                    }
-                    self.incr += (mss * mss) / self.incr + (mss / 16);
-                    if (self.cwnd + 1) as u32 * mss <= self.incr {
-                        self.cwnd += 1;
-                    }
                 }
-                if self.cwnd > self.rmt_wnd {
-                    self.cwnd = self.rmt_wnd;
-                    self.incr = self.rmt_wnd as u32 * mss;
-                }
+            }
+            if self.cwnd > self.rmt_wnd {
+                self.cwnd = self.rmt_wnd;
+                self.incr = self.rmt_wnd as u32 * mss;
             }
         }
 
@@ -766,19 +771,18 @@ impl Kcp {
             if self.probe_wait == 0 {
                 self.probe_wait = KCP_PROBE_INIT;
                 self.ts_probe = self.current + self.probe_wait;
-            } else {
-                if timediff(self.current, self.ts_probe) >= 0 {
-                    if self.probe_wait < KCP_PROBE_INIT {
-                        self.probe_wait = KCP_PROBE_INIT;
-                    }
-                    self.probe_wait += self.probe_wait / 2;
-                    if self.probe_wait > KCP_PROBE_LIMIT {
-                        self.probe_wait = KCP_PROBE_LIMIT;
-                    }
-                    self.ts_probe = self.current + self.probe_wait;
-                    self.probe |= KCP_ASK_SEND;
+            } else if timediff(self.current, self.ts_probe) >= 0 {
+                if self.probe_wait < KCP_PROBE_INIT {
+                    self.probe_wait = KCP_PROBE_INIT;
                 }
+                self.probe_wait += self.probe_wait / 2;
+                if self.probe_wait > KCP_PROBE_LIMIT {
+                    self.probe_wait = KCP_PROBE_LIMIT;
+                }
+                self.ts_probe = self.current + self.probe_wait;
+                self.probe |= KCP_ASK_SEND;
             }
+
         } else {
             self.ts_probe = 0;
             self.probe_wait = 0;

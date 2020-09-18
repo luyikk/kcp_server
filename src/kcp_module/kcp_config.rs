@@ -1,5 +1,5 @@
 use std::time::Duration;
-use crate::kcp::Kcp;
+use crate::kcp_module::Kcp;
 
 /// Kcp Delay Config
 #[derive(Debug, Clone, Copy)]

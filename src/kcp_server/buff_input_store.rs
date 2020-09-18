@@ -15,11 +15,8 @@ pub struct BuffInputStore<S: Send + 'static,R: Future<Output = Result<(), Box<dy
 
 impl<S: Send + 'static,R: Future<Output = Result<(), Box<dyn Error>>> + Send+'static> BuffInputStore<S,R> {
     /// 获取
-    pub fn get(&self) -> Option<&Box<BuffInputType<S,R>>> {
-        match self.0 {
-            None => None,
-            Some(ref v) => Some(v),
-        }
+    pub fn get(&self) -> Option<&BuffInputType<S,R>> {
+        self.0.as_ref().map(|x| x as _)
     }
     /// 设置
     pub fn set(&mut self, v: Box<BuffInputType<S,R>>) {
