@@ -1,6 +1,6 @@
 [package]
 name = "kcpserver"
-version = "0.1.4"
+version = "0.2.0"
 authors = ["luyi <luyikk@126.com>"]
 edition = "2018"
 license = "MIT/Apache-2.0"
@@ -12,14 +12,15 @@ description = "fast kcp server frame."
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-udp_server="0.3.4"
-tokio="0.2"
-bytes = "0.5"
-log="0.4"
-futures="0.3.5"
+tokio = { version = "0.2", features = ["full"] }
+net2 = "0.2"
+num_cpus="1.8"
+log="0.4.11"
+bytes = "0.5.6"
 chrono="0.4"
-
-
-[dev-dependencies]
-time = "0.1"
-rand = "0.3"
+mimalloc = "0.1.20"
+ahash = "0.4.5"
+env_logger = "0.7"
+xbinary = "0.1.2"
+async-trait = "0.1.40"
+async-mutex = "1.4.0"

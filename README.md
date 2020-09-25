@@ -1,5 +1,5 @@
 # kcp_server
-fast kcp server frame
+性能最牛逼 最好用的RUST KCP 服务器框架
 
 # Examples Echo
 ```rust
@@ -15,7 +15,7 @@ async fn main()->Result<(),Box<dyn Error>>{
     config.nodelay = Some(KcpNoDelayConfig::fastest());
     let kcp = KcpListener::<i32, _>::new("0.0.0.0:5555", config).await?;
     kcp.set_buff_input(async move |peer, data| {
-         peer.send(&data).await?;
+         peer.send(&data)?;
          Ok(())
       }).await;
     kcp.start().await?;
