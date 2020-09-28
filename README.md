@@ -15,10 +15,10 @@ async fn main()->Result<(),Box<dyn Error>>{
     config.nodelay = Some(KcpNoDelayConfig::fastest());
     let kcp = KcpListener::<i32, _>::new("0.0.0.0:5555", config).await?;
     kcp.set_buff_input(async move |peer, data| {
-         peer.send(&data)?;
-         Ok(())
-      });
+        peer.send(&data).await?;
+        Ok(())
+    });
     kcp.start().await?;
     Ok(())
- }
+}
  ```
