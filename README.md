@@ -17,7 +17,7 @@ async fn main()->Result<(),Box<dyn Error>>{
     kcp.set_buff_input(async move |peer, data| {
          peer.send(&data)?;
          Ok(())
-      }).await;
+      });
     kcp.start().await?;
     Ok(())
  }
