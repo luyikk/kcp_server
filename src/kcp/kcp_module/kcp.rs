@@ -6,11 +6,11 @@ use std::io::{self, Cursor, Read, Write};
 
 use super::error::Error;
 use super::KcpResult;
-use bytes::{Buf, BufMut, BytesMut, Bytes};
+use crate::udp::SendUDP;
+use bytes::{Buf, BufMut, Bytes, BytesMut};
 use log::*;
 use std::cmp::Ordering;
 use std::net::SocketAddr;
-use crate::udp::SendUDP;
 use tokio::io::ErrorKind;
 
 const KCP_RTO_NDL: u32 = 30;
@@ -125,14 +125,12 @@ impl KcpSegment {
     }
 }
 
+struct KcpOutput(pub SendUDP, pub SocketAddr);
 
-
-struct KcpOutput(pub SendUDP,pub SocketAddr);
-
-impl KcpOutput{
-    pub fn send(&self,data:&[u8])->io::Result<usize>{
-        if let Err(er) =self.0.send((data.to_vec(),self.1)){
-            return  Err(io::Error::new(ErrorKind::Other,er))
+impl KcpOutput {
+    pub fn send(&self, data: &[u8]) -> io::Result<usize> {
+        if let Err(er) = self.0.send((data.to_vec(), self.1)) {
+            return Err(io::Error::new(ErrorKind::Other, er));
         }
         Ok(0)
     }
@@ -231,19 +229,19 @@ impl Kcp {
     /// `output` is the callback object for writing.
     ///
     /// `conv` represents conversation.
-    pub fn new(conv: u32, output: SendUDP,addr:SocketAddr) -> Self {
-        Kcp::construct(conv, output, addr,false)
+    pub fn new(conv: u32, output: SendUDP, addr: SocketAddr) -> Self {
+        Kcp::construct(conv, output, addr, false)
     }
 
     /// Creates a KCP control object in stream mode, `conv` must be equal in both endpoints in one connection.
     /// `output` is the callback object for writing.
     ///
     /// `conv` represents conversation.
-    pub fn new_stream(conv: u32, output: SendUDP,addr:SocketAddr,stream: bool) -> Self {
-        Kcp::construct(conv, output, addr,stream)
+    pub fn new_stream(conv: u32, output: SendUDP, addr: SocketAddr, stream: bool) -> Self {
+        Kcp::construct(conv, output, addr, stream)
     }
 
-    fn construct(conv: u32, output:SendUDP,addr:SocketAddr, stream: bool) -> Self {
+    fn construct(conv: u32, output: SendUDP, addr: SocketAddr, stream: bool) -> Self {
         Kcp {
             conv,
             snd_una: 0,
@@ -282,7 +280,7 @@ impl Kcp {
             ts_flush: KCP_INTERVAL,
             ssthresh: KCP_THRESH_INIT,
             input_conv: false,
-            output: KcpOutput(output,addr),
+            output: KcpOutput(output, addr),
         }
     }
 
@@ -471,15 +469,15 @@ impl Kcp {
         }
 
         for i in 0..self.snd_buf.len() {
-            match sn.cmp(&self.snd_buf[i].sn){
-                Ordering::Equal=>{
+            match sn.cmp(&self.snd_buf[i].sn) {
+                Ordering::Equal => {
                     self.snd_buf.remove(i);
                     break;
-                },
-                Ordering::Less=>{
+                }
+                Ordering::Less => {
                     break;
-                },
-                _=>{
+                }
+                _ => {
                     continue;
                 }
             }
@@ -786,14 +784,13 @@ impl Kcp {
                 self.ts_probe = self.current + self.probe_wait;
                 self.probe |= KCP_ASK_SEND;
             }
-
         } else {
             self.ts_probe = 0;
             self.probe_wait = 0;
         }
     }
 
-   fn flush_probe_commands(&mut self, segment: &mut KcpSegment) -> KcpResult<()> {
+    fn flush_probe_commands(&mut self, segment: &mut KcpSegment) -> KcpResult<()> {
         // flush window probing commands
         if (self.probe & KCP_ASK_SEND) != 0 {
             segment.cmd = KCP_CMD_WASK;
@@ -974,7 +971,7 @@ impl Kcp {
         Ok(())
     }
 
-    pub fn flush_async(&mut self)-> KcpResult<()> {
+    pub fn flush_async(&mut self) -> KcpResult<()> {
         self.current += 10;
 
         if !self.updated {
@@ -1167,8 +1164,8 @@ impl Kcp {
     }
 
     /// set stream
-    pub fn set_stream(&mut self,stream:bool){
-        self.stream=stream
+    pub fn set_stream(&mut self, stream: bool) {
+        self.stream = stream
     }
     /// Maximum Segment Size
     pub fn mss(&self) -> u32 {
@@ -1185,4 +1182,3 @@ impl Kcp {
         self.state != 0
     }
 }
-

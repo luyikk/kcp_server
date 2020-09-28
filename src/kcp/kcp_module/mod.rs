@@ -2,7 +2,6 @@ mod error;
 mod kcp;
 pub mod kcp_config;
 
-
 /// The `KCP` prelude
 pub mod prelude {
     pub use super::{get_conv, Kcp};

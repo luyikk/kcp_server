@@ -43,12 +43,12 @@ impl fmt::Display for Error {
             ),
             Error::IoError(ref e) => e.fmt(f),
             Error::UnsupportCmd(ref e) => write!(f, "cmd {} is not supported", *e),
-            Error::Other(ref msg)=>write!(f, "Other error:{} ", msg),
-            Error::NeedUpdate=>write!(f, "NeedUpdate"),
-            Error::RecvQueueEmpty=>write!(f, "RecvQueueEmpty"),
-            Error::ExpectingFragment=>write!(f, "ExpectingFragment"),
-            Error::UserBufTooBig=>write!(f, "UserBufTooBig"),
-            Error::UserBufTooSmall=>write!(f, "UserBufTooSmall")
+            Error::Other(ref msg) => write!(f, "Other error:{} ", msg),
+            Error::NeedUpdate => write!(f, "NeedUpdate"),
+            Error::RecvQueueEmpty => write!(f, "RecvQueueEmpty"),
+            Error::ExpectingFragment => write!(f, "ExpectingFragment"),
+            Error::UserBufTooBig => write!(f, "UserBufTooBig"),
+            Error::UserBufTooSmall => write!(f, "UserBufTooSmall"),
         }
     }
 }

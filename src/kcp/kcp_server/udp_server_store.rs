@@ -5,11 +5,10 @@ use std::sync::Arc;
 /// 用来存储 UDP SERVER
 pub struct UdpServerStore(pub RefCell<Option<Arc<dyn UdpListener>>>);
 
-unsafe impl Send for UdpServerStore{}
-unsafe impl Sync for UdpServerStore{}
+unsafe impl Send for UdpServerStore {}
+unsafe impl Sync for UdpServerStore {}
 
 impl UdpServerStore {
-
     /// 获取
     pub fn get(&self) -> Option<Arc<dyn UdpListener>> {
         match *self.0.borrow_mut() {
@@ -20,6 +19,6 @@ impl UdpServerStore {
 
     /// 设置
     pub fn set(&self, v: Arc<dyn UdpListener>) {
-        (*self.0.borrow_mut() )= Some(v);
+        (*self.0.borrow_mut()) = Some(v);
     }
 }
