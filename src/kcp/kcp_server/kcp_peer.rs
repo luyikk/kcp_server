@@ -126,11 +126,11 @@ impl<T: Send> KcpPeer<T> {
         Ok(())
     }
 
-    pub(crate) async fn flush(&self) -> KcpResult<()> {
+    pub async fn flush(&self) -> KcpResult<()> {
         self.kcp.flush().await
     }
 
-    pub(crate) async fn flush_async(&self) -> KcpResult<()> {
+    pub async fn flush_async(&self) -> KcpResult<()> {
         self.kcp.flush_async().await
     }
 
