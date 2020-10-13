@@ -39,7 +39,7 @@ impl KcpPeerDropInputStore {
 
     /// 获取
     pub fn get(&self) -> Option<fn(u32)> {
-        self.0.as_ref().map(|x| x.clone() as _)
+        self.0.as_ref().map(|x| *x as _)
     }
     /// 设置
     pub fn set(&mut self, v: fn(u32)) {

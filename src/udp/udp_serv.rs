@@ -332,7 +332,7 @@ where
                         let err = {
                             let res = input(self.inner.clone(), send_sock, addr, data).await;
                             match res {
-                                Err(er) => Some(format!("{}", er)),
+                                Err(er) => Some(format!("{}->{:?}", er, er)),
                                 Ok(_) => None,
                             }
                         };

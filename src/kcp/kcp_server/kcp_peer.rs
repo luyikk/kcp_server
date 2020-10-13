@@ -65,6 +65,8 @@ impl Kcp {
     }
 }
 
+pub type DisconnectFnStore = RefCell<Option<Box<dyn FnOnce(u32)>>>;
+
 /// KCP Peer
 /// UDP的包进入 KCP PEER 经过KCP 处理后 输出
 /// 输入的包 进入KCP PEER处理,然后 输出到UDP PEER SEND TO
@@ -77,13 +79,13 @@ pub struct KcpPeer<T: Send> {
     pub token: RefCell<TokenStore<T>>,
     pub last_rev_time: AtomicI64,
     pub next_update_time: AtomicU32,
-    pub disconnect_event: RefCell<Option<Box<dyn FnOnce(u32)>>>,
+    pub disconnect_event: DisconnectFnStore,
     pub(crate) main_tx: Sender<RecvType>,
 }
 
 impl<T: Send> Drop for KcpPeer<T> {
     fn drop(&mut self) {
-        info!("kcp_peer:{} is Drop", self.conv);
+        debug!("kcp_peer:{} is Drop", self.conv);
     }
 }
 
@@ -92,7 +94,6 @@ unsafe impl<T: Send> Sync for KcpPeer<T> {}
 
 /// 简化KCP PEER 函数
 impl<T: Send> KcpPeer<T> {
-
     pub fn disconnect(&self) {
         let call_value = self.disconnect_event.borrow_mut().take();
         if let Some(call) = call_value {
@@ -120,16 +121,16 @@ impl<T: Send> KcpPeer<T> {
 
     pub(crate) async fn update(&self, current: u32) -> KcpResult<()> {
         let next = self.kcp.update(current).await?;
-        Ok(self
-            .next_update_time
-            .store(next + current, Ordering::Release))
+        self.next_update_time
+            .store(next + current, Ordering::Release);
+        Ok(())
     }
 
-    pub async fn flush(&self) -> KcpResult<()> {
+    pub(crate) async fn flush(&self) -> KcpResult<()> {
         self.kcp.flush().await
     }
 
-    pub async fn flush_async(&self) -> KcpResult<()> {
+    pub(crate) async fn flush_async(&self) -> KcpResult<()> {
         self.kcp.flush_async().await
     }
 

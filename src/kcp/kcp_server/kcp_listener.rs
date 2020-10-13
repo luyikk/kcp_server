@@ -5,6 +5,7 @@ use super::kcp_peer::KcpPeer;
 use super::kcp_peer_manager::KcpPeerManager;
 use super::udp_server_store::UdpServerStore;
 use crate::udp::{RecvType, SendUDP, TokenStore, UdpServer};
+use async_mutex::Mutex;
 use bytes::{BufMut, Bytes, BytesMut};
 use log::*;
 use std::cell::{RefCell, UnsafeCell};
@@ -12,10 +13,9 @@ use std::error::Error;
 use std::future::Future;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::atomic::{AtomicI64, AtomicU32, Ordering};
-use std::sync::{Arc};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::delay_for;
-use async_mutex::Mutex;
 
 /// KcpListener 整个KCP 服务的入口点
 /// config 存放KCP 配置
@@ -31,6 +31,7 @@ where
     buff_input: UnsafeCell<BuffInputStore<S, R>>,
     peers: Arc<KcpPeerManager<S>>,
     peer_kcpdrop_event: Arc<Mutex<KcpPeerDropInputStore>>,
+    drop_timeout_second: i64,
 }
 
 unsafe impl<S, R> Send for KcpListener<S, R>
@@ -57,6 +58,7 @@ where
     pub async fn new<A: ToSocketAddrs>(
         addr: A,
         config: KcpConfig,
+        drop_timeout_second: i64,
     ) -> Result<Arc<Self>, Box<dyn Error>> {
         // 初始化一个kcp_listener
         let kcp_listener = KcpListener {
@@ -65,7 +67,8 @@ where
             conv_make: AtomicU32::new(1),
             config,
             peers: Arc::new(KcpPeerManager::new()),
-            peer_kcpdrop_event:Arc::new(Mutex::new(KcpPeerDropInputStore::new())),
+            peer_kcpdrop_event: Arc::new(Mutex::new(KcpPeerDropInputStore::new())),
+            drop_timeout_second,
         };
 
         // 将kcp_listener 放入arc中
@@ -128,6 +131,7 @@ where
     fn cleanup(&self) {
         let peers = self.peers.clone();
         let clean_input = self.peer_kcpdrop_event.clone();
+        let timeout = self.drop_timeout_second;
         if let Some(udp_server) = self.udp_server.get() {
             tokio::spawn(async move {
                 let mut remove_vec = vec![];
@@ -136,14 +140,14 @@ where
                     for conv in peers.keys() {
                         if let Some(peer) = peers.get(conv) {
                             let time = peer.last_rev_time.load(Ordering::Acquire);
-                            if chrono::Local::now().timestamp() - time > 30 {
+                            if chrono::Local::now().timestamp() - time > timeout {
                                 remove_vec.push(*conv);
                                 remove_peers.push(peer);
                             }
                         }
                     }
 
-                    if remove_vec.len() > 0 {
+                    if !remove_vec.is_empty() {
                         if let Some(mut tx) = udp_server.get_msg_tx() {
                             for conv in remove_vec.iter() {
                                 if let Some(clean_input) = clean_input.lock_arc().await.get() {
@@ -314,35 +318,30 @@ where
         let tx = this.udp_server.get().unwrap().get_msg_tx().unwrap();
         this.config.apply_config(&mut kcp);
 
-
         let disconnect_event = move |conv: u32| {
             match this.udp_server.get() {
-                Some(udp_server)=>{
+                Some(udp_server) => {
                     if let Some(mut tx) = udp_server.get_msg_tx() {
-                        let kcpdrop_event=this.peer_kcpdrop_event.clone();
-                        tokio::spawn(async move{
-                           if let Some(peer)= this.peers.get(&conv) {
-                               if let Some(kcpdrop_action) = kcpdrop_event.lock_arc().await.get() {
-                                   kcpdrop_action(conv);
-                               }
-                               if let Err(er) = tx.send(RecvType::REMOVE(conv)).await {
-                                   error!("disconnect remove error:{:?}", er)
-                               }
-                               //等待500毫秒后再清除PEER 以保障UPDATE 的时候PEER 还存在
-                               delay_for(Duration::from_millis(500)).await;
-                               drop(peer); //防优化
-                           }
+                        let kcpdrop_event = this.peer_kcpdrop_event.clone();
+                        tokio::spawn(async move {
+                            if let Some(peer) = this.peers.get(&conv) {
+                                if let Some(kcpdrop_action) = kcpdrop_event.lock_arc().await.get() {
+                                    kcpdrop_action(conv);
+                                }
+                                if let Err(er) = tx.send(RecvType::REMOVE(conv)).await {
+                                    error!("disconnect remove error:{:?}", er)
+                                }
+                                //等待500毫秒后再清除PEER 以保障UPDATE 的时候PEER 还存在
+                                delay_for(Duration::from_millis(500)).await;
+                                drop(peer); //防优化
+                            }
                         });
-                    }
-                    else{
+                    } else {
                         error!("disconnect not get msg tx")
                     }
-                },
-                None=>{
-                    error!("disconnect not get udp server")
                 }
+                None => error!("disconnect not get udp server"),
             }
-
         };
 
         let kcp_lock = kcp.get_lock();
