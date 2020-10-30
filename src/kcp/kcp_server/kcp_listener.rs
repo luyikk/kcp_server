@@ -60,7 +60,7 @@ where
         // 将kcp_listener 放入arc中
         let kcp_listener_arc = Arc::new(kcp_listener);
         // 制造一个UDP SERVER
-        let mut udp_serv = UdpServer::<_, _, _>::new_inner(addr, kcp_listener_arc.clone()).await?;
+        let mut udp_serv = UdpServer::new_inner(addr, kcp_listener_arc.clone()).await?;
         //设置数据表输入
         udp_serv.set_input(Self::buff_input);
         //设置错误输出
