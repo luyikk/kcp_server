@@ -72,7 +72,7 @@ pub type DisconnectFnStore = RefCell<Option<Box<dyn FnOnce(u32)>>>;
 /// 输入的包 进入KCP PEER处理,然后 输出到UDP PEER SEND TO
 /// 同时还需要一个UPDATE 线程 去10MS 一次的运行KCP UPDATE
 /// token 用于扩赞逻辑上下文
-pub struct KcpPeer<T: Send> {
+pub struct KcpPeer<T> {
     pub kcp: KcpLock,
     pub conv: u32,
     pub addr: SocketAddr,
@@ -83,14 +83,14 @@ pub struct KcpPeer<T: Send> {
     pub(crate) main_tx: Sender<RecvType>,
 }
 
-impl<T: Send> Drop for KcpPeer<T> {
+impl<T> Drop for KcpPeer<T> {
     fn drop(&mut self) {
         debug!("kcp_peer:{} is Drop", self.conv);
     }
 }
 
-unsafe impl<T: Send> Send for KcpPeer<T> {}
-unsafe impl<T: Send> Sync for KcpPeer<T> {}
+unsafe impl<T> Send for KcpPeer<T> {}
+unsafe impl<T> Sync for KcpPeer<T> {}
 
 /// 简化KCP PEER 函数
 impl<T: Send> KcpPeer<T> {

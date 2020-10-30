@@ -8,10 +8,7 @@ use std::sync::Arc;
 type BuffInputType<S, R> = dyn Fn(Arc<KcpPeer<S>>, Bytes) -> R + 'static + Send + Sync;
 
 /// 用来存储 数据表输入函数
-pub struct BuffInputStore<
-    S: Send + 'static,
-    R: Future<Output = Result<(), Box<dyn Error>>> + Send + 'static,
->(pub Option<Box<BuffInputType<S, R>>>);
+pub struct BuffInputStore<S, R>(pub Option<Box<BuffInputType<S, R>>>);
 
 impl<S: Send + 'static, R: Future<Output = Result<(), Box<dyn Error>>> + Send + 'static>
     BuffInputStore<S, R>

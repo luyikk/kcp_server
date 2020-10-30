@@ -20,11 +20,7 @@ use tokio::time::delay_for;
 /// KcpListener 整个KCP 服务的入口点
 /// config 存放KCP 配置
 /// S是用户逻辑上下文类型
-pub struct KcpListener<S, R>
-where
-    S: Send + 'static,
-    R: Future<Output = Result<(), Box<dyn Error>>> + Send + 'static,
-{
+pub struct KcpListener<S, R> {
     udp_server: UdpServerStore,
     config: KcpConfig,
     conv_make: AtomicU32,
@@ -34,18 +30,8 @@ where
     drop_timeout_second: i64,
 }
 
-unsafe impl<S, R> Send for KcpListener<S, R>
-where
-    S: Send + 'static,
-    R: Future<Output = Result<(), Box<dyn Error>>> + Send + 'static,
-{
-}
-unsafe impl<S, R> Sync for KcpListener<S, R>
-where
-    S: Send + 'static,
-    R: Future<Output = Result<(), Box<dyn Error>>> + Send + 'static,
-{
-}
+unsafe impl<S, R> Send for KcpListener<S, R> {}
+unsafe impl<S, R> Sync for KcpListener<S, R> {}
 
 impl<S, R> KcpListener<S, R>
 where

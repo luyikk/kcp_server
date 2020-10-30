@@ -15,6 +15,7 @@ use tokio::sync::Mutex;
 #[cfg(not(target_os = "windows"))]
 use net2::unix::UnixUdpBuilderExt;
 use std::fmt::{Debug, Formatter};
+use std::marker::PhantomData;
 
 /// 用于通知主线程具体工作
 pub enum RecvType {
@@ -53,39 +54,23 @@ pub type ErrorInput = Arc<Mutex<dyn Fn(Option<SocketAddr>, Box<dyn Error>) -> bo
 /// R 用来限制 必须input的是 异步函数
 /// T 用来设置返回值
 
-pub struct UdpServer<I, R, S>
-where
-    I: Fn(Arc<S>, SendUDP, SocketAddr, Vec<u8>) -> R + Send + Sync + 'static,
-    R: Future<Output = Result<(), Box<dyn Error>>>,
-    S: Sync + Send + 'static,
-{
+pub struct UdpServer<I, R, S> {
     inner: Arc<S>,
     udp_contexts: Vec<UdpContext>,
     input: Option<Arc<I>>,
     error_input: Option<ErrorInput>,
     remove_event: Option<Box<dyn Fn(u32)>>,
     msg_tx: UnsafeCell<Option<Sender<RecvType>>>,
+    phantom:PhantomData<R>
 }
 
-unsafe impl<I, R, S> Send for UdpServer<I, R, S>
-where
-    I: Fn(Arc<S>, SendUDP, SocketAddr, Vec<u8>) -> R + Send + Sync + 'static,
-    R: Future<Output = Result<(), Box<dyn Error>>>,
-    S: Sync + Send + 'static,
-{
-}
+unsafe impl<I, R, S> Send for UdpServer<I, R, S> {}
 
-unsafe impl<I, R, S> Sync for UdpServer<I, R, S>
-where
-    I: Fn(Arc<S>, SendUDP, SocketAddr, Vec<u8>) -> R + Send + Sync + 'static,
-    R: Future<Output = Result<(), Box<dyn Error>>>,
-    S: Sync + Send + 'static,
-{
-}
+unsafe impl<I, R, S> Sync for UdpServer<I, R, S> {}
 
 /// 用来存储Token
 #[derive(Debug)]
-pub struct TokenStore<T: Send>(pub Option<T>);
+pub struct TokenStore<T>(pub Option<T>);
 
 impl<T: Send> TokenStore<T> {
     pub fn have(&self) -> bool {
@@ -110,7 +95,7 @@ impl<T: Send> TokenStore<T> {
 /// # token
 /// 你可以自定义放一些和用户有关的数据,这样的话方便你对用户进行区别,已提取用户逻辑数据
 #[derive(Debug)]
-pub struct Peer<T: Send> {
+pub struct Peer<T> {
     pub socket_id: usize,
     pub addr: SocketAddr,
     pub token: Arc<Mutex<TokenStore<T>>>,
@@ -229,6 +214,7 @@ where
             error_input: None,
             msg_tx: UnsafeCell::new(None),
             remove_event: None,
+            phantom:PhantomData::default()
         })
     }
 

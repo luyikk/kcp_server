@@ -4,12 +4,12 @@ use std::cell::UnsafeCell;
 use std::collections::hash_map::{Keys, Values};
 use std::sync::Arc;
 
-pub struct KcpPeerManager<S: Send> {
+pub struct KcpPeerManager<S> {
     pub kcp_peers: UnsafeCell<AHashMap<u32, Arc<KcpPeer<S>>>>,
 }
 
-unsafe impl<S: Send> Send for KcpPeerManager<S> {}
-unsafe impl<S: Send> Sync for KcpPeerManager<S> {}
+unsafe impl<S> Send for KcpPeerManager<S> {}
+unsafe impl<S> Sync for KcpPeerManager<S> {}
 
 impl<S: Send> KcpPeerManager<S> {
     pub fn new() -> KcpPeerManager<S> {
