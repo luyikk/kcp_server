@@ -48,7 +48,7 @@ where
     ) -> Result<Arc<Self>, Box<dyn Error>> {
         // 初始化一个kcp_listener
         let kcp_listener = KcpListener {
-            udp_server: UdpServerStore(RefCell::new(None)),
+            udp_server: UdpServerStore(UnsafeCell::new(None)),
             buff_input: UnsafeCell::new(BuffInputStore(None)),
             conv_make: AtomicU32::new(1),
             config,
