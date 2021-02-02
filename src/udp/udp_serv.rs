@@ -157,6 +157,7 @@ where
     /// 创建tokio的udpsocket ,从std 创建
     fn create_async_udp_socket<A: ToSocketAddrs>(addr: &A) -> Result<UdpSocket, Box<dyn Error>> {
         let std_sock = Self::create_udp_socket(&addr)?;
+        std_sock.set_nonblocking(true)?;
         let sock = UdpSocket::try_from(std_sock)?;
         Ok(sock)
     }
@@ -285,13 +286,11 @@ where
                         loop {
                             match recv_sock.recv_from(&mut buff).await{
                                 Ok((size, addr)) => {
-                                    if let Err(er) = move_data_tx
-                                        .send(RecvType::INPUT(
+                                    if let Err(er) = move_data_tx.send(RecvType::INPUT(
                                             send_sock.clone(),
                                             addr,
                                             buff[..size].to_vec(),
-                                        ))
-                                        .await
+                                        )).await
                                     {
                                         let error = error_input.lock().await;
                                         let _ = error(Some(addr), Box::new(er));
