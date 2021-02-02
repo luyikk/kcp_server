@@ -7,7 +7,6 @@ use std::error::Error;
 use std::future::Future;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
-use tokio::net::udp::RecvHalf;
 use tokio::net::UdpSocket;
 use tokio::sync::mpsc::{channel, Sender, UnboundedSender};
 use tokio::sync::Mutex;
@@ -39,7 +38,7 @@ pub const BUFF_MAX_SIZE: usize = 4096;
 /// UDP SOCKET 上下文,包含 id, 和Pees, 用于收发数据
 pub struct UdpContext {
     pub id: usize,
-    recv: RefCell<Option<RecvHalf>>,
+    recv: RefCell<Option<Arc<UdpSocket>>>,
     pub send: SendPool,
 }
 
@@ -198,11 +197,11 @@ where
         let mut udp_map = vec![];
         let mut id = 1;
         for udp in udp_list {
-            let (recv, send) = udp.split();
+            let udp_socket_ptr = Arc::new(udp);
             udp_map.push(UdpContext {
                 id,
-                recv: RefCell::new(Some(recv)),
-                send: SendPool::new(send),
+                recv: RefCell::new(Some(udp_socket_ptr.clone())),
+                send: SendPool::new(udp_socket_ptr),
             });
             id += 1;
         }
@@ -278,33 +277,36 @@ where
             for udp_sock in self.udp_contexts.iter() {
                 let recv_sock = udp_sock.recv.borrow_mut().take();
                 let send_sock = udp_sock.send.get_tx();
-                if let Some(mut recv_sock) = recv_sock {
-                    let mut move_data_tx = tx.clone();
+                if let Some(recv_sock) = recv_sock {
+                    let move_data_tx = tx.clone();
                     let error_input = err_input.clone();
                     tokio::spawn(async move {
                         let mut buff = [0; BUFF_MAX_SIZE];
                         loop {
-                            let res = { recv_sock.recv_from(&mut buff).await };
-                            if let Ok((size, addr)) = res {
-                                if let Err(er) = move_data_tx
-                                    .send(RecvType::INPUT(
-                                        send_sock.clone(),
-                                        addr,
-                                        buff[..size].to_vec(),
-                                    ))
-                                    .await
-                                {
+                            match recv_sock.recv_from(&mut buff).await{
+                                Ok((size, addr)) => {
+                                    if let Err(er) = move_data_tx
+                                        .send(RecvType::INPUT(
+                                            send_sock.clone(),
+                                            addr,
+                                            buff[..size].to_vec(),
+                                        ))
+                                        .await
+                                    {
+                                        let error = error_input.lock().await;
+                                        let _ = error(Some(addr), Box::new(er));
+                                        break;
+                                    }
+                                },
+                                Err(er) => {
                                     let error = error_input.lock().await;
-                                    let _ = error(Some(addr), Box::new(er));
-                                    break;
-                                }
-                            } else if let Err(er) = res {
-                                let error = error_input.lock().await;
-                                let stop = error(None, error::Error::IOError(er).into());
-                                if stop {
-                                    return;
+                                    let stop = error(None, error::Error::IOError(er).into());
+                                    if stop {
+                                        return;
+                                    }
                                 }
                             }
+
                         }
                     });
                 }

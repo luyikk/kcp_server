@@ -65,7 +65,7 @@ impl Kcp {
     }
 }
 
-pub type DisconnectFnStore = RefCell<Option<Box<dyn FnOnce(u32)>>>;
+pub type DisconnectFnStore = Mutex<Option<Box<dyn FnOnce(u32)>>>;
 
 /// KCP Peer
 /// UDP的包进入 KCP PEER 经过KCP 处理后 输出
@@ -95,9 +95,10 @@ unsafe impl<T> Sync for KcpPeer<T> {}
 /// 简化KCP PEER 函数
 impl<T: Send> KcpPeer<T> {
     pub fn disconnect(&self) {
-        let call_value = self.disconnect_event.borrow_mut().take();
-        if let Some(call) = call_value {
-            call(self.conv);
+        if let Some(mut call_value)=self.disconnect_event.try_lock() {
+            if let Some(call) = call_value.take() {
+                call(self.conv);
+            }
         }
     }
 

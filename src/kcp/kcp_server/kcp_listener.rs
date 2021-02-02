@@ -15,7 +15,7 @@ use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::atomic::{AtomicI64, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::time::delay_for;
+use tokio::time::sleep;
 
 /// KcpListener 整个KCP 服务的入口点
 /// config 存放KCP 配置
@@ -134,7 +134,7 @@ where
                     }
 
                     if !remove_vec.is_empty() {
-                        if let Some(mut tx) = udp_server.get_msg_tx() {
+                        if let Some(tx) = udp_server.get_msg_tx() {
                             for conv in remove_vec.iter() {
                                 if let Some(clean_input) = clean_input.lock_arc().await.get() {
                                     clean_input(*conv);
@@ -145,7 +145,7 @@ where
                             }
                         }
                     }
-                    delay_for(Duration::from_millis(500)).await;
+                    sleep(Duration::from_millis(500)).await;
                     remove_vec.clear();
                     remove_peers.clear();
                 }
@@ -171,7 +171,7 @@ where
                 }
 
                 //等待5毫秒后再重新UPDATE
-                delay_for(Duration::from_millis(2)).await;
+                sleep(Duration::from_millis(2)).await;
             }
         });
     }
@@ -303,11 +303,10 @@ where
         let mut kcp = Kcp::new(conv, sender, addr);
         let tx = this.udp_server.get().unwrap().get_msg_tx().unwrap();
         this.config.apply_config(&mut kcp);
-
         let disconnect_event = move |conv: u32| {
             match this.udp_server.get() {
                 Some(udp_server) => {
-                    if let Some(mut tx) = udp_server.get_msg_tx() {
+                    if let Some(tx) = udp_server.get_msg_tx() {
                         let kcpdrop_event = this.peer_kcpdrop_event.clone();
                         tokio::spawn(async move {
                             if let Some(peer) = this.peers.get(&conv) {
@@ -318,7 +317,7 @@ where
                                     error!("disconnect remove error:{:?}", er)
                                 }
                                 //等待500毫秒后再清除PEER 以保障UPDATE 的时候PEER 还存在
-                                delay_for(Duration::from_millis(500)).await;
+                                sleep(Duration::from_millis(500)).await;
                                 drop(peer); //防优化
                             }
                         });
@@ -338,7 +337,7 @@ where
             token: RefCell::new(TokenStore(None)),
             last_rev_time: AtomicI64::new(0),
             next_update_time: AtomicU32::new(0),
-            disconnect_event: RefCell::new(Some(Box::new(disconnect_event))),
+            disconnect_event: Mutex::new(Some(Box::new(disconnect_event))),
             main_tx: tx,
         };
 

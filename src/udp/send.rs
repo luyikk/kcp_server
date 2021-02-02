@@ -1,7 +1,8 @@
 use std::net::SocketAddr;
 use std::option::Option::Some;
-use tokio::net::udp::SendHalf;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tokio::net::UdpSocket;
+use std::sync::Arc;
 
 pub type SendUDP = UnboundedSender<(Vec<u8>, SocketAddr)>;
 
@@ -13,7 +14,7 @@ unsafe impl Send for SendPool {}
 unsafe impl Sync for SendPool {}
 
 impl SendPool {
-    pub fn new(udp_send: SendHalf) -> SendPool {
+    pub fn new(udp_send: Arc<UdpSocket>) -> SendPool {
         let (tx, rx) = unbounded_channel();
         Self::recv(rx, udp_send);
         SendPool { mpsc_sender: tx }
@@ -23,7 +24,7 @@ impl SendPool {
         self.mpsc_sender.clone()
     }
 
-    fn recv(mut mpsc_receiver: UnboundedReceiver<(Vec<u8>, SocketAddr)>, mut udp_send: SendHalf) {
+    fn recv(mut mpsc_receiver: UnboundedReceiver<(Vec<u8>, SocketAddr)>, udp_send: Arc<UdpSocket>) {
         tokio::spawn(async move {
             while let Some((data, addr)) = mpsc_receiver.recv().await {
                 let _ = udp_send.send_to(&data, &addr).await;
