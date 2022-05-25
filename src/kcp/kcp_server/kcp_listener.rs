@@ -266,7 +266,7 @@ where
         kcp_peer
             .last_rev_time
             .store(chrono::Local::now().timestamp(), Ordering::Release);
-        return kcp_peer;
+        kcp_peer
     }
 
     /// 创建一个KCP_PEER 并存入 Kcp_peers 字典中

@@ -823,11 +823,13 @@ impl Kcp {
             return Err(Error::NeedUpdate);
         }
 
-        let mut segment = KcpSegment::default();
-        segment.conv = self.conv;
-        segment.cmd = KCP_CMD_ACK;
-        segment.wnd = self.wnd_unused();
-        segment.una = self.rcv_nxt;
+        let mut segment = KcpSegment{
+            conv: self.conv,
+            cmd: KCP_CMD_ACK,
+            wnd: self.wnd_unused(),
+            una: self.rcv_nxt,
+            ..Default::default()
+        };
 
         self._flush_ack(&mut segment)
     }
@@ -839,11 +841,14 @@ impl Kcp {
             return Ok(());
         }
 
-        let mut segment = KcpSegment::default();
-        segment.conv = self.conv;
-        segment.cmd = KCP_CMD_ACK;
-        segment.wnd = self.wnd_unused();
-        segment.una = self.rcv_nxt;
+        let mut segment = KcpSegment{
+            conv: self.conv,
+            cmd: KCP_CMD_ACK,
+            wnd: self.wnd_unused(),
+            una: self.rcv_nxt,
+            ..Default::default()
+        };
+
 
         self._flush_ack(&mut segment)?;
         self.probe_wnd_size();
@@ -882,7 +887,7 @@ impl Kcp {
         let resent = if self.fastresend > 0 {
             self.fastresend
         } else {
-            u32::max_value()
+            u32::MAX
         };
 
         let rtomin = if !self.nodelay { self.rx_rto >> 3 } else { 0 };
@@ -1021,7 +1026,7 @@ impl Kcp {
         }
 
         let mut ts_flush = self.ts_flush;
-        let mut tm_packet = u32::max_value();
+        let mut tm_packet = u32::MAX;
 
         if timediff(current, ts_flush) >= 10000 || timediff(current, ts_flush) < -10000 {
             ts_flush = current;
