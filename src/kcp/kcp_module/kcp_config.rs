@@ -1,4 +1,4 @@
-use super::Kcp;
+use super::kcp::Kcp;
 use std::time::Duration;
 
 /// Kcp Delay Config

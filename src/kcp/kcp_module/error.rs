@@ -1,56 +1,34 @@
 use std::error::Error as StdError;
-use std::fmt;
 use std::io::{self, ErrorKind};
+use thiserror::Error;
 
 /// KCP protocol errors
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum Error {
+    #[error("conv inconsistent:{0}-{1}")]
     ConvInconsistent(u32, u32),
+    #[error("invalid mtu:{0}")]
     InvalidMtu(usize),
+    #[error("invalid segment size:{0}")]
     InvalidSegmentSize(usize),
+    #[error("invalid segment data size:{0}-{1}")]
     InvalidSegmentDataSize(usize, usize),
-    IoError(io::Error),
+    #[error("network io error:")]
+    IoError(#[from] io::Error),
+    #[error("need update")]
     NeedUpdate,
+    #[error("recv queue empty")]
     RecvQueueEmpty,
+    #[error("expecting fragment")]
     ExpectingFragment,
-    UnsupportCmd(u8),
+    #[error("unsupported cmd:{0}")]
+    UnsupportedCmd(u8),
+    #[error("user buf too big")]
     UserBufTooBig,
+    #[error("user buf too small")]
     UserBufTooSmall,
+    #[error("other error:{0}")]
     Other(String),
-}
-
-impl StdError for Error {
-    fn cause(&self) -> Option<&dyn StdError> {
-        match *self {
-            Error::IoError(ref e) => Some(e),
-            _ => None,
-        }
-    }
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        match *self {
-            Error::ConvInconsistent(ref s, ref o) => {
-                write!(f, "conv inconsistent, expected {}, found {}", *s, *o)
-            }
-            Error::InvalidMtu(ref e) => write!(f, "invalid mtu {}", *e),
-            Error::InvalidSegmentSize(ref e) => write!(f, "invalid segment size of {}", *e),
-            Error::InvalidSegmentDataSize(ref s, ref o) => write!(
-                f,
-                "invalid segment data size, expected {}, found {}",
-                *s, *o
-            ),
-            Error::IoError(ref e) => e.fmt(f),
-            Error::UnsupportCmd(ref e) => write!(f, "cmd {} is not supported", *e),
-            Error::Other(ref msg) => write!(f, "Other error:{} ", msg),
-            Error::NeedUpdate => write!(f, "NeedUpdate"),
-            Error::RecvQueueEmpty => write!(f, "RecvQueueEmpty"),
-            Error::ExpectingFragment => write!(f, "ExpectingFragment"),
-            Error::UserBufTooBig => write!(f, "UserBufTooBig"),
-            Error::UserBufTooSmall => write!(f, "UserBufTooSmall"),
-        }
-    }
 }
 
 fn make_io_error<T>(kind: ErrorKind, msg: T) -> io::Error
@@ -71,7 +49,7 @@ impl From<Error> for io::Error {
             Error::NeedUpdate => ErrorKind::Other,
             Error::RecvQueueEmpty => ErrorKind::WouldBlock,
             Error::ExpectingFragment => ErrorKind::WouldBlock,
-            Error::UnsupportCmd(..) => ErrorKind::Other,
+            Error::UnsupportedCmd(..) => ErrorKind::Other,
             Error::UserBufTooBig => ErrorKind::Other,
             Error::UserBufTooSmall => ErrorKind::Other,
             Error::Other(..) => ErrorKind::Other,
@@ -81,8 +59,5 @@ impl From<Error> for io::Error {
     }
 }
 
-impl From<io::Error> for Error {
-    fn from(err: io::Error) -> Error {
-        Error::IoError(err)
-    }
-}
+/// KCP result
+pub type KcpResult<T> = Result<T, Error>;
