@@ -41,7 +41,7 @@ impl KcpPeer {
 }
 
 #[async_trait::async_trait]
-pub trait IKcpPeer {
+pub(crate) trait  KcpIO{
     /// 往kcp 压udp数据包
     async fn input(&self, buf: &[u8]) -> KcpResult<usize>;
     /// 查看能读取多少KCP数据包
@@ -50,16 +50,10 @@ pub trait IKcpPeer {
     async fn recv(&self, buf: &mut [u8]) -> KcpResult<usize>;
     /// kcp update
     async fn update(&self, current: u32) -> KcpResult<()>;
-    /// 获取addr
-    fn get_addr(&self) -> SocketAddr;
-    /// 获取conv
-    fn get_conv(&self) -> u32;
-    /// 获取详细信息
-    fn to_string(&self) -> String;
 }
 
 #[async_trait::async_trait]
-impl IKcpPeer for Actor<KcpPeer> {
+impl KcpIO for  Actor<KcpPeer>{
     #[inline]
     async fn input(&self, buf: &[u8]) -> KcpResult<usize> {
         self.inner_call(|inner| async move { inner.get_mut().kcp.input(buf) })
@@ -84,8 +78,27 @@ impl IKcpPeer for Actor<KcpPeer> {
                 Ok(())
             }
         })
-        .await
+            .await
     }
+}
+
+
+
+
+#[async_trait::async_trait]
+pub trait IKcpPeer {
+
+    /// 获取addr
+    fn get_addr(&self) -> SocketAddr;
+    /// 获取conv
+    fn get_conv(&self) -> u32;
+    /// 获取详细信息
+    fn to_string(&self) -> String;
+}
+
+#[async_trait::async_trait]
+impl IKcpPeer for Actor<KcpPeer> {
+
     #[inline]
     fn get_addr(&self) -> SocketAddr {
         unsafe { self.deref_inner().addr }

@@ -12,6 +12,7 @@ use crate::kcp::kcp_module::prelude::{Kcp, KcpConfig};
 use crate::kcp::kcp_server::kcp_peer::{IKcpPeer, KCPPeer, KcpPeer};
 use crate::kcp::kcp_server::udp_sever::IUdpServer;
 use crate::prelude::kcp_module::KcpResult;
+use crate::prelude::KcpIO;
 
 /// KcpListener 整个KCP 服务的入口点
 /// config 存放KCP 配置
