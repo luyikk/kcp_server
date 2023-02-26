@@ -12,7 +12,7 @@ async fn main() -> anyhow::Result<()> {
 
     let mut config = KcpConfig::default();
     config.nodelay = Some(KcpNoDelayConfig::fastest());
-    let kcp = KcpListener::new("0.0.0.0:5555", config, 1, |peer| async move {
+    let kcp_server = KcpListener::new("0.0.0.0:5555", config, 5, |peer| async move {
         log::debug!("create kcp peer:{}", peer.to_string());
         let mut buf = [0; 1024];
         while let Ok(size) = peer.recv(&mut buf).await {
@@ -21,6 +21,6 @@ async fn main() -> anyhow::Result<()> {
         }
         Ok(())
     })?;
-    kcp.start().await?;
+    kcp_server.start().await?;
     Ok(())
 }
