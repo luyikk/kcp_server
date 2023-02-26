@@ -596,7 +596,7 @@ impl Kcp {
         let old_una = self.snd_una;
 
         let mut buf = Cursor::new(buf);
-        while buf.remaining() >= KCP_OVERHEAD as usize {
+        while buf.remaining() >= KCP_OVERHEAD {
             let conv = buf.get_u32_le();
             if conv != self.conv {
                 // This allows getting conv from this call, which allows us to allocate
@@ -619,7 +619,7 @@ impl Kcp {
             let una = buf.get_u32_le();
             let len = buf.get_u32_le() as usize;
 
-            if buf.remaining() < len as usize {
+            if buf.remaining() < len {
                 debug!(
                     "input bufsize={} payload length={} remaining={} not match",
                     input_size,
@@ -673,9 +673,9 @@ impl Kcp {
                     if timediff(sn, self.rcv_nxt + self.rcv_wnd as u32) < 0 {
                         self.ack_push(sn, ts);
                         if timediff(sn, self.rcv_nxt) >= 0 {
-                            let mut sbuf = BytesMut::with_capacity(len as usize);
+                            let mut sbuf = BytesMut::with_capacity(len);
                             unsafe {
-                                sbuf.set_len(len as usize);
+                                sbuf.set_len(len);
                             }
                             buf.read_exact(&mut sbuf).unwrap();
                             has_read_data = true;
@@ -791,7 +791,7 @@ impl Kcp {
         // flush window probing commands
         if (self.probe & KCP_ASK_SEND) != 0 {
             segment.cmd = KCP_CMD_WASK;
-            if self.buf.len() + KCP_OVERHEAD > self.mtu as usize {
+            if self.buf.len() + KCP_OVERHEAD > self.mtu {
                 self.output.send(&self.buf).await?;
                 self.buf.clear();
             }
@@ -801,7 +801,7 @@ impl Kcp {
         // flush window probing commands
         if (self.probe & KCP_ASK_TELL) != 0 {
             segment.cmd = KCP_CMD_WINS;
-            if self.buf.len() + KCP_OVERHEAD > self.mtu as usize {
+            if self.buf.len() + KCP_OVERHEAD > self.mtu {
                 self.output.send(&self.buf).await?;
                 self.buf.clear();
             }
@@ -925,7 +925,7 @@ impl Kcp {
 
                 let need = KCP_OVERHEAD + snd_segment.data.len();
 
-                if self.buf.len() + need > self.mtu as usize {
+                if self.buf.len() + need > self.mtu {
                     self.output.send(&self.buf).await?;
                     self.buf.clear();
                 }
@@ -1121,11 +1121,11 @@ impl Kcp {
     /// set maximum window size: `sndwnd=32`, `rcvwnd=32` by default
     pub fn set_wndsize(&mut self, sndwnd: u16, rcvwnd: u16) {
         if sndwnd > 0 {
-            self.snd_wnd = sndwnd as u16;
+            self.snd_wnd = sndwnd;
         }
 
         if rcvwnd > 0 {
-            self.rcv_wnd = cmp::max(rcvwnd, KCP_WND_RCV) as u16;
+            self.rcv_wnd = cmp::max(rcvwnd, KCP_WND_RCV);
         }
     }
 
@@ -1156,7 +1156,7 @@ impl Kcp {
 
     /// KCP header size
     pub fn header_len() -> usize {
-        KCP_OVERHEAD as usize
+        KCP_OVERHEAD
     }
 
     /// Enabled stream or not
