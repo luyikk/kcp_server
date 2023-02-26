@@ -46,14 +46,17 @@ where
                             if let Some(data) = reader.recv().await {
                                 let data = data?;
                                 if data.len() >= 24 {
+                                    //初始化kcp peer,并跳出 create peer监听逻辑
                                     let mut read = data_rw::DataReader::from(&data);
                                     let conv: u32 = read.read_fixed()?;
                                     let peer = kcp_listener.create_kcp_peer(conv, &peer);
                                     peer.input(&data).await?;
                                     break (conv, peer);
                                 } else if data.len() == 4 {
+                                    // 制造一个conv
                                     kcp_listener.send_kcp_conv(&peer, &data).await?;
                                 } else {
+                                    //无脑回包
                                     peer.send(&data).await?;
                                 }
                             } else {
@@ -62,6 +65,7 @@ where
                             }
                         };
 
+                        // 触发 kcp peer 主逻辑
                         let peer = kcp_peer.clone();
                         tokio::spawn(async move {
                             kcp_listener.peers.write().await.insert(conv, peer.clone());
@@ -69,17 +73,19 @@ where
                                 log::error!("kcp input error:{}", err);
                             }
                             if let Some(peer) = kcp_listener.peers.write().await.remove(&conv) {
+                                // 当peer主逻辑关闭，那么将关闭udp,触发udp主逻辑关闭
                                 peer.close();
                             }
                         });
 
+                        // 读取udp数据包，并写入kcp 直到udp peer 关闭
                         while let Some(Ok(data)) = reader.recv().await {
                             if let Err(err) = kcp_peer.input(&data).await {
                                 log::error!("kcp peer input error:{err}");
                                 break;
                             }
                         }
-
+                        // 设置 broken pipe 如果kcp主逻辑停留在 recv 那么将立马触发 recv 异常 从而中断 kcp主逻辑
                         kcp_peer.set_broken_pipe();
                         Ok(())
                     },

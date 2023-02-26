@@ -13,6 +13,7 @@ use udp_server::prelude::IUdpPeer;
 
 pub type KCPPeer = Arc<Actor<KcpPeer>>;
 
+/// kcp peer 用于管理玩家上下文 以及 读取 和发送 数据
 pub struct KcpPeer {
     kcp: Kcp,
     wake: atomic_waker::AtomicWaker,
