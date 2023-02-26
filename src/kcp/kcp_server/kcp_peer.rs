@@ -90,7 +90,7 @@ pub(crate) trait KcpIO {
     /// 从kcp读取数据包
     async fn recv_buf(&self, buf: &mut [u8]) -> KcpResult<usize>;
     /// 是否需要update
-    fn need_update(&self,current:u32)->bool;
+    fn need_update(&self, current: u32) -> bool;
     /// kcp update
     async fn update(&self, current: u32) -> KcpResult<()>;
 }
@@ -135,9 +135,7 @@ impl KcpIO for Actor<KcpPeer> {
 
     #[inline]
     fn need_update(&self, current: u32) -> bool {
-        unsafe {
-            self.deref_inner().next_update_time<current
-        }
+        unsafe { self.deref_inner().next_update_time < current }
     }
 
     #[inline]
