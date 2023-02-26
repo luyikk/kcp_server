@@ -751,7 +751,7 @@ impl Kcp {
         // flush acknowledges
         // while let Some((sn, ts)) = self.acklist.pop_front() {
         for &(sn, ts) in &self.acklist {
-            if self.buf.len() + KCP_OVERHEAD > self.mtu as usize {
+            if self.buf.len() + KCP_OVERHEAD > self.mtu {
                 self.output.send(&self.buf).await?;
                 self.buf.clear();
             }
