@@ -1,5 +1,5 @@
 # kcpserver
-[![Latest Version](https://img.shields.io/crates/v/kcpserver.svg)](https://crates.io/crates/udp_server)
+[![Latest Version](https://img.shields.io/crates/v/kcpserver.svg)](https://crates.io/crates/kcpserver)
 [![Rust Documentation](https://img.shields.io/badge/api-rustdoc-blue.svg)](https://docs.rs/kcpserver)
 [![Rust Report Card](https://rust-reportcard.xuri.me/badge/github.com/luyikk/kcp_server)](https://rust-reportcard.xuri.me/report/github.com/luyikk/kcp_server)
 [![Rust CI](https://github.com/luyikk/kcp_server/actions/workflows/rust.yml/badge.svg)](https://github.com/luyikk/kcp_server/actions/workflows/rust.yml)
