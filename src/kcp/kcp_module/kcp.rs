@@ -318,7 +318,7 @@ impl Kcp {
 
         if peeksize > buf.len() {
             debug!("recv peeksize={} bufsize={} too small", peeksize, buf.len());
-            return Err(Error::UserBufTooSmall);
+            return Err(Error::UserBufTooSmall(peeksize));
         }
 
         let recover = self.rcv_queue.len() >= self.rcv_wnd as usize;

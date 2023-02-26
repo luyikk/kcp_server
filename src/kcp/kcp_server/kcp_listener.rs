@@ -26,7 +26,7 @@ pub struct KcpListener<I> {
 
 impl<I, R> KcpListener<I>
 where
-    I: Fn(&KCPPeer, Vec<u8>) -> R + Send + Sync + 'static,
+    I: Fn(KCPPeer) -> R + Send + Sync + 'static,
     R: Future<Output = Result<(), Box<dyn Error>>> + Send + 'static,
 {
     /// 创建一个kcp listener
@@ -62,25 +62,25 @@ where
                             }
                         };
 
-                        kcp_listener
-                            .peers
-                            .write()
-                            .await
-                            .insert(conv, kcp_peer.clone());
+                        let peer = kcp_peer.clone();
+                        tokio::spawn(async move {
+                            kcp_listener.peers.write().await.insert(conv, peer.clone());
+                            if let Err(err) = (kcp_listener.input)(peer).await {
+                                log::error!("kcp input error:{}", err);
+                            }
+                            if let Some(peer) = kcp_listener.peers.write().await.remove(&conv) {
+                                peer.close();
+                            }
+                        });
 
                         while let Some(Ok(data)) = reader.recv().await {
                             if let Err(err) = kcp_peer.input(&data).await {
                                 log::error!("kcp peer input error:{err}");
                                 break;
                             }
-
-                            if kcp_listener.recv_buff(&kcp_peer).await {
-                                // 需要关闭
-                                break;
-                            }
                         }
 
-                        kcp_listener.peers.write().await.remove(&conv);
+                        kcp_peer.set_broken_pipe();
                         Ok(())
                     },
                 )?
@@ -146,21 +146,6 @@ where
         let mut kcp = Kcp::new(conv, udp_peer.clone());
         self.config.apply_config(&mut kcp);
         KcpPeer::new(kcp, conv, udp_peer.get_addr())
-    }
-
-    /// 读取kcp 数据包 并压入input FN 如果返回 true 表示需要关闭
-    #[inline]
-    async fn recv_buff(self: &Arc<Self>, kcp_peer: &KCPPeer) -> bool {
-        while let Ok(len) = kcp_peer.peek_size() {
-            let mut buff = vec![0; len];
-            if kcp_peer.recv(&mut buff).await.is_ok() {
-                if let Err(err) = (self.input)(kcp_peer, buff).await {
-                    log::error!("input error:{}", err);
-                    return true;
-                }
-            }
-        }
-        false
     }
 
     /// 获取当前时间戳 转换为u32

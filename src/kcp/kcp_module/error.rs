@@ -26,7 +26,9 @@ pub enum Error {
     #[error("user buf too big")]
     UserBufTooBig,
     #[error("user buf too small")]
-    UserBufTooSmall,
+    UserBufTooSmall(usize),
+    #[error("udp pipe is broken")]
+    BrokenPipe,
     #[error("other error:{0}")]
     Other(String),
 }
@@ -51,7 +53,8 @@ impl From<Error> for io::Error {
             Error::ExpectingFragment => ErrorKind::WouldBlock,
             Error::UnsupportedCmd(..) => ErrorKind::Other,
             Error::UserBufTooBig => ErrorKind::Other,
-            Error::UserBufTooSmall => ErrorKind::Other,
+            Error::UserBufTooSmall(..) => ErrorKind::Other,
+            Error::BrokenPipe => ErrorKind::BrokenPipe,
             Error::Other(..) => ErrorKind::Other,
         };
 
