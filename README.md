@@ -1,7 +1,10 @@
-# kcp_server
-性能最牛逼 最好用的RUST KCP 服务器框架
-
-# Examples Echo
+# kcpserver
+[![Latest Version](https://img.shields.io/crates/v/kcpserver.svg)](https://crates.io/crates/udp_server)
+[![Rust Documentation](https://img.shields.io/badge/api-rustdoc-blue.svg)](https://docs.rs/kcpserver)
+[![Rust Report Card](https://rust-reportcard.xuri.me/badge/github.com/luyikk/kcp_server)](https://rust-reportcard.xuri.me/report/github.com/luyikk/kcp_server)
+[![Rust CI](https://github.com/luyikk/kcp_server/actions/workflows/rust.yml/badge.svg)](https://github.com/luyikk/kcp_server/actions/workflows/rust.yml)
+### 最好用的RUST KCP 服务器框架
+### Examples Echo
 ```rust
 use kcpserver::prelude::{
     kcp_module::{KcpConfig, KcpNoDelayConfig},
