@@ -23,7 +23,7 @@ async fn input(peer: KCPPeer) -> Result<(), Box<dyn Error>> {
     log::debug!("create kcp peer:{}", peer.to_string());
     let mut buf = [0; 1024];
     while let Ok(size) = peer.recv(&mut buf).await {
-        log::debug!("read peer:{} buff:{}", peer.to_string(), size);
+       // log::debug!("read peer:{} buff:{}", peer.to_string(), size);
         peer.send(&buf[..size]).await?;
     }
     Ok(())

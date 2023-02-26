@@ -131,12 +131,17 @@ where
             loop {
                 let timestamp = Self::timestamp();
                 for peer in listener.peers.read().await.values() {
-                    if let Err(err) = peer.update(timestamp).await {
-                        log::error!("update kcp peer:{} error:{}", peer.to_string(), err)
+                    if peer.need_update(timestamp) {
+                        let peer = peer.clone();
+                        tokio::spawn(async move {
+                            if let Err(err) = peer.update(timestamp).await {
+                                log::error!("update kcp peer:{} error:{}", peer.to_string(), err)
+                            }
+                        });
                     }
                 }
-                //等待至少2毫秒后再重新UPDATE
-                sleep(Duration::from_millis(2)).await;
+                //等待至少5毫秒后再重新UPDATE
+                sleep(Duration::from_millis(5)).await;
             }
         });
 
