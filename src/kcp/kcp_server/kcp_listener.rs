@@ -6,6 +6,8 @@ use std::io;
 use std::net::ToSocketAddrs;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::time::sleep;
 use udp_server::prelude::{IUdpPeer, UDPPeer, UdpServer};
 
 use crate::kcp::kcp_module::prelude::{Kcp, KcpConfig};
@@ -35,13 +37,14 @@ where
         config: KcpConfig,
         drop_timeout_second: u64,
         input: I,
-    ) -> io::Result<Self> {
+    ) -> io::Result<Arc<Self>> {
         let kcp_listener = KcpListener {
             udp_server: Box::new(
                 UdpServer::<_, Arc<Self>>::new(
                     addr,
                     |peer, mut reader, kcp_listener| async move {
-                        // create kcp peer
+                        // 根据client数据包结构 进行 kcp peer初始化，
+                        // 初始化过程中 任何异常将中断udp peer
                         let (conv, kcp_peer) = loop {
                             if let Some(data) = reader.recv().await {
                                 let data = data?;
@@ -85,6 +88,7 @@ where
                                 break;
                             }
                         }
+                        log::debug!("udp broken kcp peer:{}", kcp_peer.to_string());
                         // 设置 broken pipe 如果kcp主逻辑停留在 recv 那么将立马触发 recv 异常 从而中断 kcp主逻辑
                         kcp_peer.set_broken_pipe();
                         Ok(())
@@ -98,17 +102,11 @@ where
             input,
         };
 
-        Ok(kcp_listener)
-    }
-
-    /// 返回 kcp listener 智能指针
-    pub fn builder(self) -> Arc<Self> {
-        Arc::new(self)
+        Ok(Arc::new(kcp_listener))
     }
 
     /// 开始服务
     pub async fn start(self: &Arc<Self>) -> KcpResult<()> {
-        self.udp_server.start(self.clone()).await?;
         let listener = self.clone();
         tokio::task::spawn(async move {
             loop {
@@ -118,8 +116,12 @@ where
                         log::error!("update kcp peer:{} error:{}", peer.to_string(), err)
                     }
                 }
+                //等待至少2毫秒后再重新UPDATE
+                sleep(Duration::from_millis(2)).await;
             }
         });
+
+        self.udp_server.start_udp_server(self.clone()).await?;
         Ok(())
     }
 

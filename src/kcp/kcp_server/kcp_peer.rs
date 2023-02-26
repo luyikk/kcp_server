@@ -33,7 +33,7 @@ impl std::fmt::Display for KcpPeer {
 impl Drop for KcpPeer {
     #[inline]
     fn drop(&mut self) {
-        log::trace!("kcp_peer:{} is Drop", self.conv);
+        log::debug!("kcp_peer:{} is Drop", self);
     }
 }
 
@@ -69,6 +69,7 @@ impl KcpPeer {
         match self.kcp.input(buf) {
             Ok(usize) => {
                 self.wake.wake();
+                self.next_update_time = 0;
                 Ok(usize)
             }
             Err(err) => Err(err),
@@ -106,6 +107,7 @@ impl KcpIO for Actor<KcpPeer> {
             self.deref_inner()
                 .is_broken_pipe
                 .store(true, Ordering::Release);
+            self.deref_inner().wake.wake();
         }
     }
 
@@ -133,7 +135,9 @@ impl KcpIO for Actor<KcpPeer> {
         self.inner_call(|inner| async move {
             let inner = inner.get_mut();
             if current >= inner.next_update_time {
-                inner.kcp.update(current).await
+                inner.kcp.update(current).await?;
+                inner.next_update_time = inner.kcp.check(current) + current;
+                Ok(())
             } else {
                 Ok(())
             }
@@ -150,6 +154,8 @@ pub trait IKcpPeer {
     fn get_conv(&self) -> u32;
     /// 读取数据包
     async fn recv(&self, buf: &mut [u8]) -> KcpResult<usize>;
+    /// 发送数据
+    async fn send(&self, buf: &[u8]) -> KcpResult<usize>;
     /// 获取详细信息
     fn to_string(&self) -> String;
 }
@@ -210,6 +216,12 @@ impl IKcpPeer for Actor<KcpPeer> {
         } else {
             self.recv_buf(buf).await
         }
+    }
+
+    #[inline]
+    async fn send(&self, buf: &[u8]) -> KcpResult<usize> {
+        self.inner_call(|inner| async move { inner.get_mut().kcp.send(buf) })
+            .await
     }
 
     #[inline]
