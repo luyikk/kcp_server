@@ -29,6 +29,8 @@ pub enum Error {
     UserBufTooSmall(usize),
     #[error("udp pipe is broken")]
     BrokenPipe,
+    #[error("pack sn error")]
+    SnError,
     #[error("other error:{0}")]
     Other(String),
 }
@@ -56,6 +58,7 @@ impl From<Error> for io::Error {
             Error::UserBufTooSmall(..) => ErrorKind::Other,
             Error::BrokenPipe => ErrorKind::BrokenPipe,
             Error::Other(..) => ErrorKind::Other,
+            Error::SnError => ErrorKind::Other,
         };
 
         make_io_error(kind, err)
