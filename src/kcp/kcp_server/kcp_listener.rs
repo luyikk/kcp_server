@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
-use udp_server::prelude::{IUdpPeer, UDPPeer, UdpServer};
+use udp_server::prelude::{UDPPeer, UdpServer};
 
 use crate::kcp::kcp_module::prelude::{Kcp, KcpConfig};
 use crate::kcp::kcp_server::kcp_peer::{IKcpPeer, KCPPeer, KcpPeer};

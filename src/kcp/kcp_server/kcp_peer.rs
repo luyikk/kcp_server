@@ -9,7 +9,6 @@ use std::sync::atomic::Ordering::Acquire;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use udp_server::prelude::IUdpPeer;
 
 pub type KCPPeer = Arc<Actor<KcpPeer>>;
 

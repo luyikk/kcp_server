@@ -6,7 +6,7 @@ use std::cmp;
 use std::cmp::Ordering;
 use std::collections::VecDeque;
 use std::io::{self, Cursor, Read, Write};
-use udp_server::prelude::{IUdpPeer, UDPPeer};
+use udp_server::prelude::UDPPeer;
 
 use super::error::{Error, KcpResult};
 
