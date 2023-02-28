@@ -32,7 +32,7 @@ impl std::fmt::Display for KcpPeer {
 impl Drop for KcpPeer {
     #[inline]
     fn drop(&mut self) {
-        log::debug!("kcp_peer:{} is Drop", self);
+        log::trace!("kcp_peer:{} is Drop", self);
     }
 }
 

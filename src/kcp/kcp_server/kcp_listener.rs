@@ -1,5 +1,5 @@
 use async_lock::RwLock;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::future::Future;
 use std::io;
@@ -62,6 +62,8 @@ where
                 UdpServer::<_, Arc<Self>>::new(
                     addr,
                     |peer, mut reader, kcp_listener| async move {
+                        //用于存放临时的 conv 分配
+                        let mut conv_table = HashSet::new();
                         // 根据client数据包结构 进行 kcp peer初始化，
                         // 初始化过程中 任何异常将中断udp peer
                         let (conv, kcp_peer) = loop {
@@ -71,12 +73,25 @@ where
                                     //初始化kcp peer,并跳出 create peer监听逻辑
                                     let mut read = data_rw::DataReader::from(&data);
                                     let conv: u32 = read.read_fixed()?;
-                                    let peer = kcp_listener.create_kcp_peer(conv, &peer);
-                                    peer.input(&data).await?;
-                                    break (conv, peer);
+                                    if conv_table.remove(&conv) {
+                                        // 如果收到的conv是分配未使用的
+                                        let peer = kcp_listener.create_kcp_peer(conv, &peer);
+                                        peer.input(&data).await?;
+                                        break (conv, peer);
+                                    } else {
+                                        // 如果收到的conv是非法的 不理会
+                                        log::trace!(
+                                            "udp peer:{} create kcp error conv:{}",
+                                            peer.get_addr(),
+                                            conv
+                                        );
+                                        continue;
+                                    }
                                 } else if data.len() == 4 {
                                     // 制造一个conv
-                                    kcp_listener.send_kcp_conv(&peer, &data).await?;
+                                    kcp_listener
+                                        .send_kcp_conv(&peer, &mut conv_table, &data)
+                                        .await?;
                                 } else {
                                     //无脑回包
                                     peer.send(&data).await?;
@@ -150,10 +165,16 @@ where
     }
 
     /// 首先判断 是否第一次发包
-    /// 如果第一次发包 看看发的是不是 [u8;4] 是的话 生成一个conv id,给客户端发回
+    /// 如果第一次发包 看看发的是不是 [u8;4] 是的话 生成一个conv id,并记录,然后给客户端发回
     #[inline]
-    async fn send_kcp_conv(self: &Arc<Self>, udp_peer: &UDPPeer, data: &[u8]) -> KcpResult<()> {
+    async fn send_kcp_conv(
+        self: &Arc<Self>,
+        udp_peer: &UDPPeer,
+        conv_table: &mut HashSet<u32>,
+        data: &[u8],
+    ) -> KcpResult<()> {
         let conv = self.make_conv();
+        conv_table.insert(conv);
         log::trace!("{} make conv:{}", udp_peer.get_addr(), conv);
         let mut buff = data_rw::Data::with_capacity(8);
         buff.write_buf(data);

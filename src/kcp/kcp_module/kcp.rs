@@ -692,8 +692,6 @@ impl Kcp {
 
                             self.parse_data(segment);
                         }
-                    } else {
-                        return Err(Error::SnError);
                     }
                 }
                 KCP_CMD_WASK => {
