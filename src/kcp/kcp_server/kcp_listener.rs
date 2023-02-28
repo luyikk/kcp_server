@@ -11,10 +11,9 @@ use tokio::time::sleep;
 use udp_server::prelude::{UDPPeer, UdpServer};
 
 use crate::kcp::kcp_module::prelude::{Kcp, KcpConfig};
-use crate::kcp::kcp_server::kcp_peer::{IKcpPeer, KCPPeer, KcpPeer};
+use crate::kcp::kcp_server::kcp_peer::{KCPPeer, KcpPeer};
 use crate::kcp::kcp_server::udp_sever::IUdpServer;
 use crate::prelude::kcp_module::KcpResult;
-use crate::prelude::KcpIO;
 
 /// KcpListener 整个KCP 服务的入口点
 /// config 存放KCP 配置
@@ -110,7 +109,7 @@ where
                             }
                             if let Some(peer) = kcp_listener.peers.write().await.remove(&conv) {
                                 // 当peer主逻辑关闭，那么将关闭udp,触发udp主逻辑关闭
-                                peer.close();
+                                peer.close().await;
                             }
                         });
 

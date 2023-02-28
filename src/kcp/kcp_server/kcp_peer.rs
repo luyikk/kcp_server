@@ -1,25 +1,25 @@
 use crate::kcp::kcp_module::prelude::{Kcp, KcpResult};
-use aqueue::Actor;
-use futures_lite::future::poll_fn;
+use futures::future::{poll_fn, BoxFuture};
+use futures::FutureExt;
 use std::fmt::Formatter;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
-use std::sync::atomic::Ordering::Acquire;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
-use std::task::{Context, Poll};
+use std::task::{ready, Context, Poll};
+use pin_project::pin_project;
 
-pub type KCPPeer = Arc<Actor<KcpPeer>>;
+pub type KCPPeer = Arc<KcpPeer>;
 
 /// kcp peer 用于管理玩家上下文 以及 读取 和发送 数据
 pub struct KcpPeer {
-    kcp: Kcp,
+    kcp: async_lock::RwLock<Kcp>,
     wake: atomic_waker::AtomicWaker,
     is_broken_pipe: AtomicBool,
     pub conv: u32,
     pub addr: SocketAddr,
-    pub next_update_time: u32,
+    pub next_update_time: AtomicU32,
 }
 
 impl std::fmt::Display for KcpPeer {
@@ -37,20 +37,21 @@ impl Drop for KcpPeer {
 }
 
 impl KcpPeer {
-    pub fn new(kcp: Kcp, conv: u32, addr: SocketAddr) -> Arc<Actor<KcpPeer>> {
-        Arc::new(Actor::new(Self {
-            kcp,
+    pub fn new(kcp: Kcp, conv: u32, addr: SocketAddr) -> Arc<KcpPeer> {
+        Arc::new(Self {
+            kcp: async_lock::RwLock::new(kcp),
             wake: Default::default(),
             is_broken_pipe: Default::default(),
             conv,
             addr,
             next_update_time: Default::default(),
-        }))
+        })
     }
 
+    /// 查看能读取多少KCP数据包
     #[inline]
-    fn peek_size(&self) -> KcpResult<usize> {
-        match self.kcp.peek_size() {
+    pub(crate) async fn peek_size(&self) -> KcpResult<usize> {
+        match self.kcp.read().await.peek_size() {
             Ok(size) => Ok(size),
             Err(err) => {
                 if self.is_broken_pipe.load(Ordering::Acquire) {
@@ -63,126 +64,88 @@ impl KcpPeer {
         }
     }
 
+    /// 往kcp 压udp数据包
     #[inline]
-    fn input(&mut self, buf: &[u8]) -> KcpResult<usize> {
-        match self.kcp.input(buf) {
+    pub(crate) async fn input(&self, buf: &[u8]) -> KcpResult<usize> {
+        match self.kcp.write().await.input(buf) {
             Ok(usize) => {
                 self.wake.wake();
-                self.next_update_time = 0;
+                self.next_update_time.store(0, Ordering::Release);
                 Ok(usize)
             }
             Err(err) => Err(err),
         }
     }
-}
 
-#[async_trait::async_trait]
-pub(crate) trait KcpIO {
-    /// 往kcp 压udp数据包
-    async fn input(&self, buf: &[u8]) -> KcpResult<usize>;
     /// udp 层关闭时设置,设置完将导致kcp无法读取
-    fn set_broken_pipe(&self);
-    /// 查看能读取多少KCP数据包
-    fn peek_size(&self) -> KcpResult<usize>;
+    #[inline]
+    pub(crate) fn set_broken_pipe(&self) {
+        self.is_broken_pipe.store(true, Ordering::Release);
+        self.wake.wake();
+    }
+
     /// 关闭kcp peer
-    fn close(&self);
+    #[inline]
+    pub(crate) async fn close(&self) {
+        if !self.is_broken_pipe.load(Ordering::Acquire) {
+            self.kcp.read().await.output.peer.close();
+        }
+    }
+
     /// 从kcp读取数据包
-    async fn recv_buf(&self, buf: &mut [u8]) -> KcpResult<usize>;
+    #[inline]
+    pub(crate) async fn recv_buf(&self, buf: &mut [u8]) -> KcpResult<usize> {
+        self.kcp.write().await.recv(buf)
+    }
     /// 是否需要update
-    fn need_update(&self, current: u32) -> bool;
+    #[inline]
+    pub(crate) fn need_update(&self, current: u32) -> bool {
+        self.next_update_time.load(Ordering::Acquire) < current
+    }
+
     /// kcp update
-    async fn update(&self, current: u32) -> KcpResult<()>;
-}
-
-#[async_trait::async_trait]
-impl KcpIO for Actor<KcpPeer> {
     #[inline]
-    async fn input(&self, buf: &[u8]) -> KcpResult<usize> {
-        self.inner_call(|inner| async move { inner.get_mut().input(buf) })
-            .await
-    }
-
-    #[inline]
-    fn set_broken_pipe(&self) {
-        unsafe {
-            self.deref_inner()
-                .is_broken_pipe
-                .store(true, Ordering::Release);
-            self.deref_inner().wake.wake();
+    pub(crate) async fn update(&self, current: u32) -> KcpResult<()> {
+        if current >= self.next_update_time.load(Ordering::Acquire) {
+            let mut kcp = self.kcp.write().await;
+            kcp.update(current).await?;
+            self.next_update_time
+                .store(kcp.check(current) + current, Ordering::Release);
+            Ok(())
+        } else {
+            Ok(())
         }
     }
 
-    #[inline]
-    fn peek_size(&self) -> KcpResult<usize> {
-        unsafe { self.deref_inner().peek_size() }
-    }
-
-    #[inline]
-    fn close(&self) {
-        unsafe {
-            if !self.deref_inner().is_broken_pipe.load(Acquire) {
-                self.deref_inner().kcp.output.peer.close();
-            }
-        }
-    }
-
-    #[inline]
-    async fn recv_buf(&self, buf: &mut [u8]) -> KcpResult<usize> {
-        self.inner_call(|inner| async move { inner.get_mut().kcp.recv(buf) })
-            .await
-    }
-
-    #[inline]
-    fn need_update(&self, current: u32) -> bool {
-        unsafe { self.deref_inner().next_update_time < current }
-    }
-
-    #[inline]
-    async fn update(&self, current: u32) -> KcpResult<()> {
-        self.inner_call(|inner| async move {
-            let inner = inner.get_mut();
-            if current >= inner.next_update_time {
-                inner.kcp.update(current).await?;
-                inner.next_update_time = inner.kcp.check(current) + current;
-                Ok(())
-            } else {
-                Ok(())
-            }
-        })
-        .await
-    }
-}
-
-#[async_trait::async_trait]
-pub trait IKcpPeer {
     /// 获取addr
-    fn get_addr(&self) -> SocketAddr;
+    #[inline]
+    pub fn get_addr(&self) -> SocketAddr {
+        self.addr
+    }
     /// 获取conv
-    fn get_conv(&self) -> u32;
+    #[inline]
+    pub fn get_conv(&self) -> u32 {
+        self.conv
+    }
+
     /// 读取数据包
-    async fn recv(&self, buf: &mut [u8]) -> KcpResult<usize>;
-    /// 发送数据
-    async fn send(&self, buf: &[u8]) -> KcpResult<usize>;
-    /// 获取详细信息
-    fn to_string(&self) -> String;
-}
-
-#[async_trait::async_trait]
-impl IKcpPeer for Actor<KcpPeer> {
     #[inline]
-    fn get_addr(&self) -> SocketAddr {
-        unsafe { self.deref_inner().addr }
-    }
-    #[inline]
-    fn get_conv(&self) -> u32 {
-        unsafe { self.deref_inner().conv }
-    }
-
-    #[inline]
-    async fn recv(&self, buf: &mut [u8]) -> KcpResult<usize> {
-        use futures_lite::future::FutureExt;
+    pub async fn recv(&self, buf: &mut [u8]) -> KcpResult<usize> {
+        /// 用于等待读取
+        #[pin_project]
         struct WaitInput<'a> {
-            peer: &'a Actor<KcpPeer>,
+            peer: &'a KcpPeer,
+            state: WaitInputState<'a>,
+        }
+
+        /// 等待读取状态
+        enum WaitInputState<'a> {
+            /// 检查
+            Check,
+            /// 第一次 解锁 kcp
+            WaitLockOne(BoxFuture<'a, KcpResult<usize>>),
+            /// 第二次 解锁 kcp
+            WaitLockTow(BoxFuture<'a, KcpResult<usize>>),
         }
 
         impl<'a> Future for WaitInput<'a> {
@@ -190,34 +153,60 @@ impl IKcpPeer for Actor<KcpPeer> {
 
             #[inline]
             fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-                macro_rules! try_recv {
-                    () => {
-                        match self.peer.peek_size() {
-                            Ok(size) => {
-                                if size > 0 {
-                                    return Poll::Ready(Ok(size));
+                let this=self.project();
+                loop {
+                    match this.state {
+                        WaitInputState::Check => {
+                            *this.state = WaitInputState::WaitLockOne(this.peer.peek_size().boxed());
+                            continue;
+                        }
+                        WaitInputState::WaitLockOne(ref mut lock_future) => {
+                            match ready!(lock_future.as_mut().poll(cx)) {
+                                Ok(size) => {
+                                    if size > 0 {
+                                        return Poll::Ready(Ok(size));
+                                    }
+                                }
+                                Err(crate::prelude::kcp_module::Error::BrokenPipe) => {
+                                    return Poll::Ready(Err(
+                                        crate::prelude::kcp_module::Error::BrokenPipe,
+                                    ))
+                                }
+                                Err(_) => {
+                                    this.peer.wake.register(cx.waker());
+                                    *this.state =
+                                        WaitInputState::WaitLockTow(this.peer.peek_size().boxed());
                                 }
                             }
-                            Err(crate::prelude::kcp_module::Error::BrokenPipe) => {
-                                return Poll::Ready(Err(
-                                    crate::prelude::kcp_module::Error::BrokenPipe,
-                                ))
-                            }
-                            Err(_) => {}
                         }
-                    };
+                        WaitInputState::WaitLockTow(ref mut lock_future) => {
+                            match ready!(lock_future.as_mut().poll(cx)) {
+                                Ok(size) => {
+                                    if size > 0 {
+                                        return Poll::Ready(Ok(size));
+                                    }
+                                }
+                                Err(crate::prelude::kcp_module::Error::BrokenPipe) => {
+                                    return Poll::Ready(Err(
+                                        crate::prelude::kcp_module::Error::BrokenPipe,
+                                    ))
+                                }
+                                Err(_) => {
+                                    *this.state = WaitInputState::Check;
+                                    return Poll::Pending;
+                                }
+                            }
+                        }
+                    }
                 }
-                try_recv!();
-                unsafe {
-                    self.peer.deref_inner().wake.register(cx.waker());
-                }
-                try_recv!();
-                Poll::Pending
             }
         }
 
-        let mut wait = WaitInput { peer: self };
-        let size = poll_fn(|cx| wait.poll(cx)).await?;
+        let mut wait = WaitInput {
+            peer: self,
+            state: WaitInputState::Check,
+        }.boxed();
+        let size = poll_fn(|cx| Pin::new(&mut wait).poll(cx)).await?;
         if buf.len() < size {
             Err(crate::prelude::kcp_module::Error::UserBufTooSmall(size))
         } else {
@@ -225,14 +214,9 @@ impl IKcpPeer for Actor<KcpPeer> {
         }
     }
 
+    /// 发送数据
     #[inline]
-    async fn send(&self, buf: &[u8]) -> KcpResult<usize> {
-        self.inner_call(|inner| async move { inner.get_mut().kcp.send(buf) })
-            .await
-    }
-
-    #[inline]
-    fn to_string(&self) -> String {
-        unsafe { self.deref_inner().to_string() }
+    pub async fn send(&self, buf: &[u8]) -> KcpResult<usize> {
+        self.kcp.write().await.send(buf)
     }
 }
