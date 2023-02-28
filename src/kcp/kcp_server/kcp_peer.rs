@@ -1,6 +1,8 @@
 use crate::kcp::kcp_module::prelude::{Kcp, KcpResult};
-use futures::future::{poll_fn, BoxFuture};
-use futures::FutureExt;
+use futures::{
+    future::{poll_fn, BoxFuture},
+    FutureExt,
+};
 use std::fmt::Formatter;
 use std::future::Future;
 use std::net::SocketAddr;
@@ -8,7 +10,6 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::task::{ready, Context, Poll};
-
 
 pub type KCPPeer = Arc<KcpPeer>;
 
