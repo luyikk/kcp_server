@@ -8,7 +8,7 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::task::{ready, Context, Poll};
-use pin_project::pin_project;
+
 
 pub type KCPPeer = Arc<KcpPeer>;
 
@@ -132,7 +132,6 @@ impl KcpPeer {
     #[inline]
     pub async fn recv(&self, buf: &mut [u8]) -> KcpResult<usize> {
         /// 用于等待读取
-        #[pin_project]
         struct WaitInput<'a> {
             peer: &'a KcpPeer,
             state: WaitInputState<'a>,
@@ -152,12 +151,11 @@ impl KcpPeer {
             type Output = KcpResult<usize>;
 
             #[inline]
-            fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-                let this=self.project();
+            fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
                 loop {
-                    match this.state {
+                    match self.state {
                         WaitInputState::Check => {
-                            *this.state = WaitInputState::WaitLockOne(this.peer.peek_size().boxed());
+                            self.state = WaitInputState::WaitLockOne(self.peer.peek_size().boxed());
                             continue;
                         }
                         WaitInputState::WaitLockOne(ref mut lock_future) => {
@@ -173,9 +171,9 @@ impl KcpPeer {
                                     ))
                                 }
                                 Err(_) => {
-                                    this.peer.wake.register(cx.waker());
-                                    *this.state =
-                                        WaitInputState::WaitLockTow(this.peer.peek_size().boxed());
+                                    self.peer.wake.register(cx.waker());
+                                    self.state =
+                                        WaitInputState::WaitLockTow(self.peer.peek_size().boxed());
                                 }
                             }
                         }
@@ -192,7 +190,7 @@ impl KcpPeer {
                                     ))
                                 }
                                 Err(_) => {
-                                    *this.state = WaitInputState::Check;
+                                    self.state = WaitInputState::Check;
                                     return Poll::Pending;
                                 }
                             }
@@ -205,7 +203,7 @@ impl KcpPeer {
         let mut wait = WaitInput {
             peer: self,
             state: WaitInputState::Check,
-        }.boxed();
+        };
         let size = poll_fn(|cx| Pin::new(&mut wait).poll(cx)).await?;
         if buf.len() < size {
             Err(crate::prelude::kcp_module::Error::UserBufTooSmall(size))
