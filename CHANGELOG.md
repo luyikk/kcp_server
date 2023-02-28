@@ -1,5 +1,10 @@
 # Changelog
 
+# 1.0.4
+### Features
+* check sn
+* overwrite kcp peer
+
 # 1.0.3
 ### Features
 * fix sn error
