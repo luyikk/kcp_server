@@ -22,7 +22,7 @@ async fn main() -> anyhow::Result<()> {
 #[inline]
 async fn input(peer: KCPPeer) -> Result<(), Box<dyn Error>> {
     log::debug!("create kcp peer:{}", peer.to_string());
-    let mut buf = [0; 2];
+    let mut buf = [0; 1024];
     let mut stream = KcpStream::from(&peer);
 
     while let Ok(size) = stream.read(&mut buf).await {
