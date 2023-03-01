@@ -1,10 +1,12 @@
 use crate::kcp::kcp_module::prelude::{Kcp, KcpResult};
+use async_lock::RwLockWriteGuard;
 use futures::{
     future::{poll_fn, BoxFuture},
-    FutureExt,
+    AsyncRead, FutureExt,
 };
 use std::fmt::Formatter;
 use std::future::Future;
+use std::io::ErrorKind;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -163,13 +165,12 @@ impl KcpPeer {
                             match ready!(lock_future.as_mut().poll(cx)) {
                                 Ok(size) => {
                                     if size > 0 {
-                                        return Poll::Ready(Ok(size));
+                                        return Ok(size).into();
                                     }
                                 }
                                 Err(crate::prelude::kcp_module::Error::BrokenPipe) => {
-                                    return Poll::Ready(Err(
-                                        crate::prelude::kcp_module::Error::BrokenPipe,
-                                    ))
+                                    return Err(crate::prelude::kcp_module::Error::BrokenPipe)
+                                        .into()
                                 }
                                 Err(_) => {
                                     self.peer.wake.register(cx.waker());
@@ -182,13 +183,12 @@ impl KcpPeer {
                             match ready!(lock_future.as_mut().poll(cx)) {
                                 Ok(size) => {
                                     if size > 0 {
-                                        return Poll::Ready(Ok(size));
+                                        return Ok(size).into();
                                     }
                                 }
                                 Err(crate::prelude::kcp_module::Error::BrokenPipe) => {
-                                    return Poll::Ready(Err(
-                                        crate::prelude::kcp_module::Error::BrokenPipe,
-                                    ))
+                                    return Err(crate::prelude::kcp_module::Error::BrokenPipe)
+                                        .into()
                                 }
                                 Err(_) => {
                                     self.state = WaitInputState::Check;
@@ -217,5 +217,133 @@ impl KcpPeer {
     #[inline]
     pub async fn send(&self, buf: &[u8]) -> KcpResult<usize> {
         self.kcp.write().await.send(buf)
+    }
+}
+
+pub struct KcpStream<'a> {
+    peer: &'a KCPPeer,
+    cache: Vec<u8>,
+    cache_siz: usize,
+    cache_pos: usize,
+    state: KcpStreamState<'a>,
+}
+
+enum KcpStreamState<'a> {
+    Begin,
+    ReadSize(BoxFuture<'a, KcpResult<usize>>),
+    Recv {
+        cache: bool,
+        lock_kcp: BoxFuture<'a, RwLockWriteGuard<'a, Kcp>>,
+    },
+}
+
+impl<'a> From<&'a KCPPeer> for KcpStream<'a> {
+    fn from(peer: &'a KCPPeer) -> Self {
+        Self {
+            peer,
+            cache: vec![],
+            cache_siz: 0,
+            cache_pos: 0,
+            state: KcpStreamState::Begin,
+        }
+    }
+}
+
+impl KcpStream<'_> {
+    fn poll_recv(&mut self, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<std::io::Result<usize>> {
+        loop {
+            match self.state {
+                KcpStreamState::Begin => {
+                    if self.cache_pos < self.cache_siz {
+                        let copy_size = (self.cache_siz - self.cache_pos).min(buf.len());
+                        buf[..copy_size].copy_from_slice(
+                            &self.cache[self.cache_pos..self.cache_pos + copy_size],
+                        );
+                        self.cache_pos += copy_size;
+                        return Ok(copy_size).into();
+                    }
+                    self.state = KcpStreamState::ReadSize(self.peer.peek_size().boxed());
+                }
+                KcpStreamState::ReadSize(ref mut size_future) => {
+                    match ready!(size_future.as_mut().poll(cx)) {
+                        Ok(0) => return Ok(0).into(),
+                        Ok(size) => {
+                            if size > buf.len() {
+                                if self.cache.len() < size {
+                                    self.cache.resize(size, 0);
+                                }
+                                self.state = KcpStreamState::Recv {
+                                    cache: true,
+                                    lock_kcp: self.peer.kcp.write().boxed(),
+                                }
+                            } else {
+                                self.state = KcpStreamState::Recv {
+                                    cache: false,
+                                    lock_kcp: self.peer.kcp.write().boxed(),
+                                }
+                            }
+                        }
+                        Err(crate::prelude::kcp_module::Error::BrokenPipe) => {
+                            return Err(std::io::Error::new(
+                                ErrorKind::BrokenPipe,
+                                "kcp peer is broken pipe",
+                            ))
+                            .into()
+                        }
+                        Err(_) => {
+                            self.peer.wake.register(cx.waker());
+                            self.state = KcpStreamState::Begin;
+                            return Poll::Pending;
+                        }
+                    }
+                }
+                KcpStreamState::Recv {
+                    cache,
+                    ref mut lock_kcp,
+                } => {
+                    let mut kcp = ready!(lock_kcp.as_mut().poll(cx));
+                    if cache {
+                        match kcp.recv(&mut self.cache) {
+                            Ok(0) => return Ok(0).into(),
+                            Ok(size) => {
+                                self.cache_siz = size;
+                                self.cache_pos = 0;
+                                self.state = KcpStreamState::Begin;
+                            }
+                            Err(err) => return Err(err.into()).into(),
+                        }
+                    } else {
+                        match kcp.recv(buf) {
+                            Ok(size) => return Ok(size).into(),
+                            Err(crate::prelude::kcp_module::Error::RecvQueueEmpty) => {
+                                self.state = KcpStreamState::Begin;
+                            }
+                            Err(crate::prelude::kcp_module::Error::UserBufTooSmall(size)) => {
+                                if self.cache.len() < size {
+                                    self.cache.resize(size, 0);
+                                }
+                                self.state = KcpStreamState::Recv {
+                                    cache: true,
+                                    lock_kcp: self.peer.kcp.write().boxed(),
+                                }
+                            }
+                            Err(err) => return Err(err.into()).into(),
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl<'a> AsyncRead for KcpStream<'a> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut [u8],
+    ) -> Poll<std::io::Result<usize>> {
+        let res = ready!(self.poll_recv(cx, buf));
+        self.state = KcpStreamState::Begin;
+        res.into()
     }
 }

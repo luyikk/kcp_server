@@ -1,3 +1,4 @@
+use futures::AsyncReadExt;
 use kcpserver::prelude::{
     kcp_module::{KcpConfig, KcpNoDelayConfig},
     *,
@@ -21,9 +22,11 @@ async fn main() -> anyhow::Result<()> {
 #[inline]
 async fn input(peer: KCPPeer) -> Result<(), Box<dyn Error>> {
     log::debug!("create kcp peer:{}", peer.to_string());
-    let mut buf = [0; 1024];
-    while let Ok(size) = peer.recv(&mut buf).await {
-        // log::debug!("read peer:{} buff:{}", peer.to_string(), size);
+    let mut buf = [0; 2];
+    let mut stream = KcpStream::from(&peer);
+
+    while let Ok(size) = stream.read(&mut buf).await {
+        log::debug!("read peer:{} buff:{}", peer.to_string(), size);
         peer.send(&buf[..size]).await?;
     }
     Ok(())
