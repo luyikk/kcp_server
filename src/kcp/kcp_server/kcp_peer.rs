@@ -138,7 +138,9 @@ impl KcpPeer {
     pub async fn recv(&self, buf: &mut [u8]) -> KcpResult<usize> {
         /// 用于等待读取
         struct WaitInput<'a> {
+            /// kcp peer
             peer: &'a KcpPeer,
+            /// 状态机
             state: WaitInputState<'a>,
         }
 
