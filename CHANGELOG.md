@@ -1,5 +1,10 @@
 # Changelog
 
+# 1.0.5
+### Features
+* add AsyncRead for KcpReader
+* add AsyncRead for KcpWriter
+
 # 1.0.4
 ### Features
 * check sn
