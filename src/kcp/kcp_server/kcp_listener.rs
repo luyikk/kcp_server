@@ -38,6 +38,7 @@ use crate::prelude::kcp_module::KcpResult;
 ///       writer.flush().await?;
 ///    }
 ///    writer.shutdown().await?;
+///    log::debug!("kcp peer:{} close", peer.to_string());
 ///    Ok(())
 /// })?;
 /// kcp_server.start().await?;

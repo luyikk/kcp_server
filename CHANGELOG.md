@@ -1,5 +1,9 @@
 # Changelog
 
+# 1.0.6
+### Features
+* Revise udp broken kcp peer log level to trace
+
 # 1.0.5
 ### Features
 * add AsyncRead for KcpReader
