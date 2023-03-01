@@ -34,6 +34,6 @@ async fn input(peer: KCPPeer) -> Result<(), Box<dyn Error>> {
         writer.flush().await?;
     }
     writer.shutdown().await?;
-    log::debug!("kcp peer:{} close", peer.to_string());
+    log::debug!("kcp peer:{} closed", peer.to_string());
     Ok(())
 }
