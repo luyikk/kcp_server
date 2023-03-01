@@ -292,7 +292,6 @@ impl KcpStream<'_> {
                         }
                         Err(_) => {
                             self.peer.wake.register(cx.waker());
-                            self.state = KcpStreamState::Begin;
                             return Poll::Pending;
                         }
                     }
@@ -342,8 +341,8 @@ impl<'a> AsyncRead for KcpStream<'a> {
         cx: &mut Context<'_>,
         buf: &mut [u8],
     ) -> Poll<std::io::Result<usize>> {
-        let res = ready!(self.poll_recv(cx, buf));
+        let poll = self.poll_recv(cx, buf);
         self.state = KcpStreamState::Begin;
-        res.into()
+        poll
     }
 }
