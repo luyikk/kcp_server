@@ -31,10 +31,13 @@ use crate::prelude::kcp_module::KcpResult;
 ///    log::debug!("create kcp peer:{}", peer.to_string());
 ///    let mut buf = [0; 1024];
 ///    let mut reader = peer.get_reader();
+///    let mut writer = peer.get_writer();
 ///    while let Ok(size) = reader.read(&mut buf).await {
-///       log::debug!("read peer:{} buff:{}", peer.to_string(), size);
-///       peer.send(&buf[..size]).await?;
+///       log::debug!("read peer:{} buff:{}", peer, size);
+///       writer.write_all(&buf[..size]).await?;
+///       writer.flush().await?;
 ///    }
+///    writer.shutdown().await?;
 ///    Ok(())
 /// })?;
 /// kcp_server.start().await?;

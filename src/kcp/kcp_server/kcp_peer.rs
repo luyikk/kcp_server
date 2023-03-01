@@ -1,4 +1,6 @@
 mod reader;
+mod writer;
+
 use crate::kcp::kcp_module::prelude::{Kcp, KcpResult};
 use futures::{
     future::{poll_fn, BoxFuture},
@@ -12,6 +14,7 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::task::{ready, Context, Poll};
+pub use writer::*;
 
 pub type KCPPeer = Arc<KcpPeer>;
 
@@ -223,9 +226,21 @@ impl KcpPeer {
         self.kcp.write().await.send(buf)
     }
 
+    /// flush
+    #[inline]
+    pub async fn flush(&self) -> KcpResult<()> {
+        self.kcp.write().await.flush_async().await
+    }
+
     /// 获取数据读取器
     #[inline]
     pub fn get_reader<'a>(self: &'a KCPPeer) -> KcpReader<'a> {
         KcpReader::from(self)
+    }
+
+    /// 获取写入器
+    #[inline]
+    pub fn get_writer<'a>(self: &'a KCPPeer) -> KcpWriter<'a> {
+        KcpWriter::from(self)
     }
 }

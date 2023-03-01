@@ -4,7 +4,7 @@ use kcpserver::prelude::{
 };
 use log::LevelFilter;
 use std::error::Error;
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -26,11 +26,13 @@ async fn input(peer: KCPPeer) -> Result<(), Box<dyn Error>> {
 
     //let mut reader = KcpReader::from(&peer);
     let mut reader = peer.get_reader();
+    let mut writer = peer.get_writer();
 
     while let Ok(size) = reader.read(&mut buf).await {
-        log::debug!("read peer:{} buff:{}", peer.to_string(), size);
-        peer.send(&buf[..size]).await?;
+        log::debug!("read peer:{} buff:{}", peer, size);
+        writer.write_all(&buf[..size]).await?;
+        writer.flush().await?;
     }
-
+    writer.shutdown().await?;
     Ok(())
 }
