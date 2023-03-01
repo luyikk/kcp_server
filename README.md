@@ -23,7 +23,8 @@ async fn main() -> anyhow::Result<()> {
     let kcp_server = KcpListener::new("0.0.0.0:5555", config, 1, |peer| async move {
         log::debug!("create kcp peer:{}", peer.to_string());
         let mut buf = [0; 1024];
-        while let Ok(size) = peer.recv(&mut buf).await {
+        let mut reader = peer.get_reader();
+        while let Ok(size) = reader.read(&mut buf).await {
             log::debug!("read peer:{} buff:{}", peer.to_string(), size);
             peer.send(&buf[..size]).await?;
         }
