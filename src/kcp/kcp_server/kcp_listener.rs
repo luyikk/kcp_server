@@ -28,7 +28,7 @@ use crate::prelude::kcp_module::KcpResult;
 /// let mut config = KcpConfig::default();
 /// config.nodelay = Some(KcpNoDelayConfig::fastest());
 /// let kcp_server = KcpListener::new("0.0.0.0:5555", config, 5, |peer| async move {
-///    log::debug!("create kcp peer:{}", peer.to_string());
+///    log::debug!("create kcp peer:{}", peer);
 ///    let mut buf = [0; 1024];
 ///    let mut reader = peer.get_reader();
 ///    let mut writer = peer.get_writer();
@@ -126,7 +126,7 @@ where
                                 break;
                             }
                         }
-                        log::debug!("udp broken kcp peer:{}", kcp_peer.to_string());
+                        log::trace!("udp broken kcp peer:{}", kcp_peer);
                         // 设置 broken pipe 如果kcp主逻辑停留在 recv 那么将立马触发 recv 异常 从而中断 kcp主逻辑
                         kcp_peer.set_broken_pipe();
                         Ok(())
@@ -154,7 +154,7 @@ where
                         let peer = peer.clone();
                         tokio::spawn(async move {
                             if let Err(err) = peer.update(timestamp).await {
-                                log::error!("update kcp peer:{} error:{}", peer.to_string(), err)
+                                log::error!("update kcp peer:{} error:{}", peer, err)
                             }
                         });
                     }
