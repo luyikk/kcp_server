@@ -104,6 +104,7 @@ impl KcpReader<'_> {
                             // 如果是个错误 基本上是 RecvQueueEmpty
                             // 那么 将开始异步等待
                             self.peer.wake.register(cx.waker());
+                            // 手动将状态机设置为初始状态
                             self.state = KcpReaderState::Begin;
                             return Poll::Pending;
                         }
