@@ -10,6 +10,7 @@ use kcpserver::prelude::{
     kcp_module::{KcpConfig, KcpNoDelayConfig},
     *,
 };
+use tokio::io::AsyncReadExt;
 use log::LevelFilter;
 
 #[tokio::main]
