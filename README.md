@@ -22,7 +22,7 @@ async fn main() -> anyhow::Result<()> {
     let mut config = KcpConfig::default();
     config.nodelay = Some(KcpNoDelayConfig::fastest());
     let kcp_server = KcpListener::new("0.0.0.0:5555", config, 1, |peer| async move {
-        log::debug!("create kcp peer:{}", peer.to_string());
+        log::debug!("create kcp peer:{}", peer);
         let mut buf = [0; 1024];
         let mut reader = peer.get_reader();
         let mut writer = peer.get_writer();
