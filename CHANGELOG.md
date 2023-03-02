@@ -1,5 +1,9 @@
 # Changelog
 
+# 1.1.0
+### Features
+* add udp layer encode bytes
+
 # 1.0.6
 ### Features
 * Revise udp broken kcp peer log level to trace

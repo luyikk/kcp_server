@@ -1,4 +1,5 @@
 use async_lock::RwLock;
+use data_rw::Data;
 use std::collections::HashMap;
 use std::error::Error;
 use std::future::Future;
@@ -68,12 +69,39 @@ where
                 UdpServer::<_, Arc<Self>>::new(
                     addr,
                     |peer, mut reader, kcp_listener| async move {
+                        /*
+                           支持 3种模式  1:直接接收到kcp数据包 sn=0的
+                                       2:通过udp数据包4字节 申请conv,之后接收到kcp数据包 sn=0的
+                                       3:通过udp数据包大于4字节小于23字节的密钥，进行udp异或简单加密的
+                        */
+
+                        // 用于UDP层简单加解密,防止一些机构封kcp协议
+                        let mut key: Option<Vec<u8>> = None;
+
+                        /// 解密
+                        #[inline]
+                        fn decode(key: &Option<Vec<u8>>, data: &mut [u8]) {
+                            if let Some(ref key) = key {
+                                if !key.is_empty() {
+                                    let mut j = 0;
+                                    for item in data {
+                                        *item ^= key[j];
+                                        j += 1;
+                                        if j >= key.len() {
+                                            j = 0;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         // 根据client数据包结构 进行 kcp peer初始化，
                         // 初始化过程中 任何异常将中断udp peer
                         let (conv, kcp_peer) = loop {
                             if let Some(data) = reader.recv().await {
-                                let data = data?;
+                                let mut data = data?;
                                 if data.len() >= 24 {
+                                    decode(&key, &mut data[4..]);
                                     //初始化kcp peer,并跳出 create peer监听逻辑
                                     let mut read = data_rw::DataReader::from(&data);
                                     let conv: u32 = read.read_fixed()?;
@@ -81,8 +109,8 @@ where
                                     let sn: u32 = read.read_fixed()?;
                                     if sn == 0 {
                                         // 如果收到的conv是分配未使用的
-                                        let peer = kcp_listener.create_kcp_peer(conv, &peer);
-                                        peer.input(&data).await?;
+                                        let peer = kcp_listener.create_kcp_peer(conv, &peer, key);
+                                        peer.input(&mut data, false).await?;
                                         break (conv, peer);
                                     } else {
                                         // 如果收到的sn是非法的 不理会
@@ -95,11 +123,17 @@ where
                                         continue;
                                     }
                                 } else if data.len() == 4 {
-                                    // 制造一个conv
+                                    // 制造一个conv 发回
                                     kcp_listener.send_kcp_conv(&peer, &data).await?;
                                 } else {
-                                    //无脑回包
-                                    peer.send(&data).await?;
+                                    let conv = kcp_listener.make_conv();
+                                    let mut buff = Data::with_capacity(4 + data.len());
+                                    buff.write_fixed(conv);
+                                    buff.write_buf(&data);
+                                    // 保存密钥用于创建kcp peer
+                                    key = Some(data);
+                                    //发回conv和密钥
+                                    peer.send(&buff).await?;
                                 }
                             } else {
                                 log::error!("udp peer:{} channel is close", peer.get_addr());
@@ -121,8 +155,8 @@ where
                         });
 
                         // 读取udp数据包，并写入kcp 直到udp peer 关闭
-                        while let Some(Ok(data)) = reader.recv().await {
-                            if let Err(err) = kcp_peer.input(&data).await {
+                        while let Some(Ok(mut data)) = reader.recv().await {
+                            if let Err(err) = kcp_peer.input(&mut data, true).await {
                                 log::error!("kcp peer input error:{err}");
                                 break;
                             }
@@ -194,8 +228,13 @@ where
 
     /// 创建一个 KCP PEER
     #[inline]
-    fn create_kcp_peer(self: &Arc<Self>, conv: u32, udp_peer: &UDPPeer) -> KCPPeer {
-        let mut kcp = Kcp::new(conv, udp_peer.clone());
+    fn create_kcp_peer(
+        self: &Arc<Self>,
+        conv: u32,
+        udp_peer: &UDPPeer,
+        key: Option<Vec<u8>>,
+    ) -> KCPPeer {
+        let mut kcp = Kcp::new(conv, udp_peer.clone(), key);
         self.config.apply_config(&mut kcp);
         KcpPeer::new(kcp, conv, udp_peer.get_addr())
     }

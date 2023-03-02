@@ -124,12 +124,43 @@ impl KcpSegment {
 
 pub(crate) struct KcpOutput {
     pub peer: UDPPeer,
+    pub key: Option<Vec<u8>>,
 }
 
 impl KcpOutput {
     #[inline]
     pub async fn send(&self, data: &[u8]) -> io::Result<usize> {
-        self.peer.send(data).await
+        if self.key.is_none() {
+            self.peer.send(data).await
+        } else {
+            //实现UDP 层加密
+            let mut buff = data.to_vec();
+            self.encode(&mut buff[4..]);
+            self.peer.send(&buff).await
+        }
+    }
+
+    /// 加密
+    #[inline]
+    fn encode(&self, data: &mut [u8]) {
+        self.decode(data)
+    }
+
+    /// 解密
+    #[inline]
+    fn decode(&self, data: &mut [u8]) {
+        if let Some(ref key) = self.key {
+            if !key.is_empty() {
+                let mut j = 0;
+                for item in data {
+                    *item ^= key[j];
+                    j += 1;
+                    if j >= key.len() {
+                        j = 0;
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -226,19 +257,19 @@ impl Kcp {
     /// `output` is the callback object for writing.
     ///
     /// `conv` represents conversation.
-    pub fn new(conv: u32, output: UDPPeer) -> Self {
-        Kcp::construct(conv, output, false)
+    pub fn new(conv: u32, output: UDPPeer, key: Option<Vec<u8>>) -> Self {
+        Kcp::construct(conv, output, false, key)
     }
 
     /// Creates a KCP control object in stream mode, `conv` must be equal in both endpoints in one connection.
     /// `output` is the callback object for writing.
     ///
     /// `conv` represents conversation.
-    pub fn new_stream(conv: u32, output: UDPPeer, stream: bool) -> Self {
-        Kcp::construct(conv, output, stream)
+    pub fn new_stream(conv: u32, output: UDPPeer, stream: bool, key: Option<Vec<u8>>) -> Self {
+        Kcp::construct(conv, output, stream, key)
     }
 
-    fn construct(conv: u32, output: UDPPeer, stream: bool) -> Self {
+    fn construct(conv: u32, output: UDPPeer, stream: bool, key: Option<Vec<u8>>) -> Self {
         Kcp {
             conv,
             snd_una: 0,
@@ -277,7 +308,7 @@ impl Kcp {
             ts_flush: KCP_INTERVAL,
             ssthresh: KCP_THRESH_INIT,
             input_conv: false,
-            output: KcpOutput { peer: output },
+            output: KcpOutput { peer: output, key },
         }
     }
 
@@ -577,7 +608,10 @@ impl Kcp {
     }
 
     /// Call this when you received a packet from raw connection
-    pub fn input(&mut self, buf: &[u8]) -> KcpResult<usize> {
+    pub fn input(&mut self, buf: &mut [u8], decode: bool) -> KcpResult<usize> {
+        if decode {
+            self.output.decode(&mut buf[4..]);
+        }
         let input_size = buf.len();
 
         trace!("[RI] {} bytes", buf.len());

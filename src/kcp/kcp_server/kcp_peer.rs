@@ -72,8 +72,8 @@ impl KcpPeer {
 
     /// 往kcp 压udp数据包
     #[inline]
-    pub(crate) async fn input(&self, buf: &[u8]) -> KcpResult<usize> {
-        match self.kcp.write().await.input(buf) {
+    pub(crate) async fn input(&self, buf: &mut [u8], decode: bool) -> KcpResult<usize> {
+        match self.kcp.write().await.input(buf, decode) {
             Ok(usize) => {
                 self.wake.wake();
                 self.next_update_time.store(0, Ordering::Release);
