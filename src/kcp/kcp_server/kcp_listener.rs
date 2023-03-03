@@ -170,7 +170,7 @@ where
                 .set_peer_timeout_sec(drop_timeout_second),
             ),
             config,
-            conv_make: Default::default(),
+            conv_make: AtomicU32::new(1),
             peers: Default::default(),
             input,
         };

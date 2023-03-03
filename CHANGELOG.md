@@ -1,5 +1,9 @@
 # Changelog
 
+# 1.1.1
+### Features
+* fix conv first make is 0
+
 # 1.1.0
 ### Features
 * add udp layer encode bytes
