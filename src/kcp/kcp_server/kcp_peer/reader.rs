@@ -1,11 +1,11 @@
 use super::KCPPeer;
 use crate::kcp::kcp_module::prelude::Kcp;
-use crate::prelude::kcp_module::KcpResult;
-use async_lock::RwLockWriteGuard;
+use async_lock::MutexGuard;
 use futures::future::BoxFuture;
 use futures::{ready, FutureExt};
 use std::io::{Error, ErrorKind};
 use std::pin::Pin;
+use std::sync::atomic::Ordering;
 use std::task::{Context, Poll};
 use tokio::io::ReadBuf;
 
@@ -33,12 +33,7 @@ enum KcpReaderState<'a> {
     /// 开始
     Begin,
     /// 读取需要 的长度信息
-    ReadSize(BoxFuture<'a, KcpResult<usize>>),
-    /// 读取数据
-    Recv {
-        cache: bool,
-        lock_kcp: BoxFuture<'a, RwLockWriteGuard<'a, Kcp>>,
-    },
+    ReadBuff(BoxFuture<'a, MutexGuard<'a, Kcp>>),
 }
 
 impl<'a> From<&'a KCPPeer> for KcpReader<'a> {
@@ -72,24 +67,66 @@ impl KcpReader<'_> {
                         self.cache_pos += copy_size;
                         return Ok(copy_size).into();
                     }
-                    self.state = KcpReaderState::ReadSize(self.peer.peek_size().boxed());
+                    self.state = KcpReaderState::ReadBuff(self.peer.kcp.lock().boxed());
                 }
-                KcpReaderState::ReadSize(ref mut size_future) => {
-                    match ready!(size_future.as_mut().poll(cx)) {
-                        Ok(0) => return Ok(0).into(),
+                KcpReaderState::ReadBuff(ref mut size_future) => {
+                    let mut kcp = ready!(size_future.as_mut().poll(cx));
+
+                    let size = match kcp.peek_size() {
+                        Ok(size) => Ok(size),
+                        Err(err) => {
+                            if self.peer.is_broken_pipe.load(Ordering::Acquire) {
+                                //如果udp层关闭那么 返回 BrokenPipe
+                                Err(crate::prelude::kcp_module::Error::BrokenPipe)
+                            } else {
+                                Err(err)
+                            }
+                        }
+                    };
+
+                    match size {
                         Ok(size) => {
                             if size > buf.len() {
                                 if self.cache.len() < size {
                                     self.cache.resize(size, 0);
                                 }
-                                self.state = KcpReaderState::Recv {
-                                    cache: true,
-                                    lock_kcp: self.peer.kcp.write().boxed(),
+
+                                // 如果读取到cache
+                                // 成功的话 将设置 cache_siz 和 cache_pos
+                                match kcp.recv(&mut self.cache) {
+                                    Ok(0) => return Ok(0).into(),
+                                    Ok(size) => {
+                                        self.cache_siz = size;
+                                        self.cache_pos = 0;
+                                        self.state = KcpReaderState::Begin;
+                                    }
+                                    Err(err) => return Err(err.into()).into(),
                                 }
                             } else {
-                                self.state = KcpReaderState::Recv {
-                                    cache: false,
-                                    lock_kcp: self.peer.kcp.write().boxed(),
+                                match kcp.recv(buf) {
+                                    Ok(size) => return Ok(size).into(),
+                                    Err(crate::prelude::kcp_module::Error::RecvQueueEmpty) => {
+                                        self.state = KcpReaderState::Begin;
+                                    }
+                                    Err(crate::prelude::kcp_module::Error::UserBufTooSmall(
+                                        size,
+                                    )) => {
+                                        if self.cache.len() < size {
+                                            self.cache.resize(size, 0);
+                                        }
+                                        // 如果读取到cache
+                                        // 成功的话 将设置 cache_siz 和 cache_pos
+                                        match kcp.recv(&mut self.cache) {
+                                            Ok(0) => return Ok(0).into(),
+                                            Ok(size) => {
+                                                self.cache_siz = size;
+                                                self.cache_pos = 0;
+                                                self.state = KcpReaderState::Begin;
+                                            }
+                                            Err(err) => return Err(err.into()).into(),
+                                        }
+                                    }
+                                    Err(err) => return Err(err.into()).into(),
                                 }
                             }
                         }
@@ -107,42 +144,6 @@ impl KcpReader<'_> {
                             // 手动将状态机设置为初始状态
                             self.state = KcpReaderState::Begin;
                             return Poll::Pending;
-                        }
-                    }
-                }
-                KcpReaderState::Recv {
-                    cache,
-                    ref mut lock_kcp,
-                } => {
-                    let mut kcp = ready!(lock_kcp.as_mut().poll(cx));
-                    if cache {
-                        // 如果读取到cache
-                        // 成功的话 将设置 cache_siz 和 cache_pos
-                        match kcp.recv(&mut self.cache) {
-                            Ok(0) => return Ok(0).into(),
-                            Ok(size) => {
-                                self.cache_siz = size;
-                                self.cache_pos = 0;
-                                self.state = KcpReaderState::Begin;
-                            }
-                            Err(err) => return Err(err.into()).into(),
-                        }
-                    } else {
-                        match kcp.recv(buf) {
-                            Ok(size) => return Ok(size).into(),
-                            Err(crate::prelude::kcp_module::Error::RecvQueueEmpty) => {
-                                self.state = KcpReaderState::Begin;
-                            }
-                            Err(crate::prelude::kcp_module::Error::UserBufTooSmall(size)) => {
-                                if self.cache.len() < size {
-                                    self.cache.resize(size, 0);
-                                }
-                                self.state = KcpReaderState::Recv {
-                                    cache: true,
-                                    lock_kcp: self.peer.kcp.write().boxed(),
-                                }
-                            }
-                            Err(err) => return Err(err.into()).into(),
                         }
                     }
                 }

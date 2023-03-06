@@ -1,7 +1,7 @@
 use super::KCPPeer;
 use crate::kcp::kcp_module::prelude::Kcp;
 use crate::prelude::kcp_module::KcpResult;
-use async_lock::RwLockWriteGuard;
+use async_lock::MutexGuard;
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use std::pin::Pin;
@@ -21,7 +21,7 @@ enum KcpWriterState<'a> {
     /// 开始
     Begin,
     /// 写入状态
-    Write(BoxFuture<'a, RwLockWriteGuard<'a, Kcp>>),
+    Write(BoxFuture<'a, MutexGuard<'a, Kcp>>),
     /// flush状态
     FlushAsync(BoxFuture<'a, KcpResult<()>>),
     /// 关闭状态
@@ -44,7 +44,7 @@ impl KcpWriter<'_> {
         loop {
             match self.state {
                 KcpWriterState::Begin => {
-                    self.state = KcpWriterState::Write(self.peer.kcp.write().boxed());
+                    self.state = KcpWriterState::Write(self.peer.kcp.lock().boxed());
                 }
                 KcpWriterState::Write(ref mut write_lock) => {
                     let mut kcp = ready!(write_lock.as_mut().poll(cx));

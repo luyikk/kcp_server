@@ -1,5 +1,9 @@
 # Changelog
 
+# 1.1.2
+### Features
+* use mutex Because RwLock doesn't mean much
+
 # 1.1.1
 ### Features
 * fix conv first make is 0

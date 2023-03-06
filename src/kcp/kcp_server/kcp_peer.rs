@@ -2,6 +2,7 @@ mod reader;
 mod writer;
 
 use crate::kcp::kcp_module::prelude::{Kcp, KcpResult};
+use async_lock::MutexGuard;
 use futures::{
     future::{poll_fn, BoxFuture},
     FutureExt,
@@ -20,7 +21,7 @@ pub type KCPPeer = Arc<KcpPeer>;
 
 /// kcp peer 用于管理玩家上下文 以及 读取 和发送 数据
 pub struct KcpPeer {
-    kcp: async_lock::RwLock<Kcp>,
+    kcp: async_lock::Mutex<Kcp>,
     wake: atomic_waker::AtomicWaker,
     is_broken_pipe: AtomicBool,
     pub conv: u32,
@@ -45,7 +46,7 @@ impl Drop for KcpPeer {
 impl KcpPeer {
     pub fn new(kcp: Kcp, conv: u32, addr: SocketAddr) -> Arc<KcpPeer> {
         Arc::new(Self {
-            kcp: async_lock::RwLock::new(kcp),
+            kcp: async_lock::Mutex::new(kcp),
             wake: Default::default(),
             is_broken_pipe: Default::default(),
             conv,
@@ -54,26 +55,10 @@ impl KcpPeer {
         })
     }
 
-    /// 查看能读取多少KCP数据包
-    #[inline]
-    pub(crate) async fn peek_size(&self) -> KcpResult<usize> {
-        match self.kcp.read().await.peek_size() {
-            Ok(size) => Ok(size),
-            Err(err) => {
-                if self.is_broken_pipe.load(Ordering::Acquire) {
-                    //如果udp层关闭那么 返回 BrokenPipe
-                    Err(crate::prelude::kcp_module::Error::BrokenPipe)
-                } else {
-                    Err(err)
-                }
-            }
-        }
-    }
-
     /// 往kcp 压udp数据包
     #[inline]
     pub(crate) async fn input(&self, buf: &mut [u8], decode: bool) -> KcpResult<usize> {
-        match self.kcp.write().await.input(buf, decode) {
+        match self.kcp.lock().await.input(buf, decode) {
             Ok(usize) => {
                 self.wake.wake();
                 self.next_update_time.store(0, Ordering::Release);
@@ -94,14 +79,14 @@ impl KcpPeer {
     #[inline]
     pub(crate) async fn close(&self) {
         if !self.is_broken_pipe.load(Ordering::Acquire) {
-            self.kcp.read().await.output.peer.close();
+            self.kcp.lock().await.output.peer.close();
         }
     }
 
     /// 从kcp读取数据包
     #[inline]
     pub(crate) async fn recv_buf(&self, buf: &mut [u8]) -> KcpResult<usize> {
-        self.kcp.write().await.recv(buf)
+        self.kcp.lock().await.recv(buf)
     }
 
     /// 是否需要update
@@ -114,7 +99,7 @@ impl KcpPeer {
     #[inline]
     pub(crate) async fn update(&self, current: u32) -> KcpResult<()> {
         if current >= self.next_update_time.load(Ordering::Acquire) {
-            let mut kcp = self.kcp.write().await;
+            let mut kcp = self.kcp.lock().await;
             kcp.update(current).await?;
             self.next_update_time
                 .store(kcp.check(current) + current, Ordering::Release);
@@ -152,9 +137,7 @@ impl KcpPeer {
             /// 检查
             Check,
             /// 第一次 解锁 kcp
-            WaitLockOne(BoxFuture<'a, KcpResult<usize>>),
-            /// 第二次 解锁 kcp
-            WaitLockTow(BoxFuture<'a, KcpResult<usize>>),
+            WaitLock(BoxFuture<'a, MutexGuard<'a, Kcp>>),
         }
 
         impl<'a> Future for WaitInput<'a> {
@@ -165,11 +148,24 @@ impl KcpPeer {
                 loop {
                     match self.state {
                         WaitInputState::Check => {
-                            self.state = WaitInputState::WaitLockOne(self.peer.peek_size().boxed());
+                            self.state = WaitInputState::WaitLock(self.peer.kcp.lock().boxed());
                             continue;
                         }
-                        WaitInputState::WaitLockOne(ref mut lock_future) => {
-                            match ready!(lock_future.as_mut().poll(cx)) {
+                        WaitInputState::WaitLock(ref mut lock_future) => {
+                            let kcp = ready!(lock_future.as_mut().poll(cx));
+                            let result_size = match kcp.peek_size() {
+                                Ok(size) => Ok(size),
+                                Err(err) => {
+                                    if self.peer.is_broken_pipe.load(Ordering::Acquire) {
+                                        //如果udp层关闭那么 返回 BrokenPipe
+                                        Err(crate::prelude::kcp_module::Error::BrokenPipe)
+                                    } else {
+                                        Err(err)
+                                    }
+                                }
+                            };
+
+                            match result_size {
                                 Ok(size) => {
                                     if size > 0 {
                                         return Ok(size).into();
@@ -181,23 +177,6 @@ impl KcpPeer {
                                 }
                                 Err(_) => {
                                     self.peer.wake.register(cx.waker());
-                                    self.state =
-                                        WaitInputState::WaitLockTow(self.peer.peek_size().boxed());
-                                }
-                            }
-                        }
-                        WaitInputState::WaitLockTow(ref mut lock_future) => {
-                            match ready!(lock_future.as_mut().poll(cx)) {
-                                Ok(size) => {
-                                    if size > 0 {
-                                        return Ok(size).into();
-                                    }
-                                }
-                                Err(crate::prelude::kcp_module::Error::BrokenPipe) => {
-                                    return Err(crate::prelude::kcp_module::Error::BrokenPipe)
-                                        .into()
-                                }
-                                Err(_) => {
                                     self.state = WaitInputState::Check;
                                     return Poll::Pending;
                                 }
@@ -223,13 +202,13 @@ impl KcpPeer {
     /// 发送数据
     #[inline]
     pub async fn send(&self, buf: &[u8]) -> KcpResult<usize> {
-        self.kcp.write().await.send(buf)
+        self.kcp.lock().await.send(buf)
     }
 
     /// flush
     #[inline]
     pub async fn flush(&self) -> KcpResult<()> {
-        self.kcp.write().await.flush_async().await
+        self.kcp.lock().await.flush_async().await
     }
 
     /// 获取数据读取器
