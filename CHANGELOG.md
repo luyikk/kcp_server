@@ -1,5 +1,9 @@
 # Changelog
 
+# 1.1.4
+### Features
+* fix kcp ctor current ts is 0 error
+
 # 1.1.3
 ### Features
 * update async-lock to 3.3
