@@ -1143,12 +1143,7 @@ impl Kcp {
         }
 
         if interval >= 0 {
-            if interval > 5000 {
-                interval = 5000;
-            } else if interval < 10 {
-                interval = 10;
-            }
-
+            interval = interval.clamp(10, 5000);
             self.interval = interval as u32;
         }
 
