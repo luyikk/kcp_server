@@ -7,7 +7,7 @@ use std::io;
 use std::net::ToSocketAddrs;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::time::sleep;
 use udp_server::prelude::{UDPPeer, UdpServer};
 
@@ -234,7 +234,7 @@ where
         udp_peer: &UDPPeer,
         key: Option<Vec<u8>>,
     ) -> KCPPeer {
-        let mut kcp = Kcp::new(conv, udp_peer.clone(), key);
+        let mut kcp = Kcp::new(conv, Self::timestamp(), udp_peer.clone(), key);
         self.config.apply_config(&mut kcp);
         KcpPeer::new(kcp, conv, udp_peer.get_addr())
     }
@@ -242,7 +242,10 @@ where
     /// 获取当前时间戳 转换为u32
     #[inline(always)]
     fn timestamp() -> u32 {
-        let time = chrono::Local::now().timestamp_millis() & 0xffffffff;
-        time as u32
+        let start = SystemTime::now();
+        let since_the_epoch = start
+            .duration_since(UNIX_EPOCH)
+            .expect("time went afterwards");
+        since_the_epoch.as_millis() as u32
     }
 }

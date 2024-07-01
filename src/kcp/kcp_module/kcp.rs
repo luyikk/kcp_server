@@ -257,19 +257,31 @@ impl Kcp {
     /// `output` is the callback object for writing.
     ///
     /// `conv` represents conversation.
-    pub fn new(conv: u32, output: UDPPeer, key: Option<Vec<u8>>) -> Self {
-        Kcp::construct(conv, output, false, key)
+    pub fn new(conv: u32, current_ts: u32, output: UDPPeer, key: Option<Vec<u8>>) -> Self {
+        Kcp::construct(conv, current_ts, output, false, key)
     }
 
     /// Creates a KCP control object in stream mode, `conv` must be equal in both endpoints in one connection.
     /// `output` is the callback object for writing.
     ///
     /// `conv` represents conversation.
-    pub fn new_stream(conv: u32, output: UDPPeer, stream: bool, key: Option<Vec<u8>>) -> Self {
-        Kcp::construct(conv, output, stream, key)
+    pub fn new_stream(
+        conv: u32,
+        current_ts: u32,
+        output: UDPPeer,
+        stream: bool,
+        key: Option<Vec<u8>>,
+    ) -> Self {
+        Kcp::construct(conv, current_ts, output, stream, key)
     }
 
-    fn construct(conv: u32, output: UDPPeer, stream: bool, key: Option<Vec<u8>>) -> Self {
+    fn construct(
+        conv: u32,
+        current_ts: u32,
+        output: UDPPeer,
+        stream: bool,
+        key: Option<Vec<u8>>,
+    ) -> Self {
         Kcp {
             conv,
             snd_una: 0,
@@ -280,7 +292,7 @@ impl Kcp {
             state: 0,
             cwnd: 0,
             probe: 0,
-            current: 0,
+            current: current_ts,
             xmit: 0,
             nodelay: false,
             updated: false,
@@ -496,18 +508,15 @@ impl Kcp {
             return;
         }
 
-        for i in 0..self.snd_buf.len() {
+        let mut i = 0_usize;
+        while i < self.snd_buf.len() {
             match sn.cmp(&self.snd_buf[i].sn) {
                 Ordering::Equal => {
                     self.snd_buf.remove(i);
                     break;
                 }
-                Ordering::Less => {
-                    break;
-                }
-                _ => {
-                    continue;
-                }
+                Ordering::Less => break,
+                _ => i += 1,
             }
         }
     }
@@ -1023,7 +1032,6 @@ impl Kcp {
     /// Or you can ask `check` when to call this again.
     pub async fn update(&mut self, current: u32) -> KcpResult<()> {
         self.current = current;
-
         if !self.updated {
             self.updated = true;
             self.ts_flush = self.current;
@@ -1108,11 +1116,11 @@ impl Kcp {
     }
 
     /// Set check interval
-    pub fn set_interval(&mut self, mut interval: u32) {
-        if interval > 5000 {
-            interval = 5000;
-        } else if interval < 10 {
-            interval = 10;
+    pub fn set_interval(&mut self, interval: u32) {
+        match interval {
+            interval if interval < 10 => self.interval = 10,
+            interval if interval > 5000 => self.interval = 5000,
+            _ => self.interval = interval,
         }
         self.interval = interval;
     }
