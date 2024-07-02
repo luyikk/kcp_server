@@ -21,16 +21,21 @@ async fn main() -> anyhow::Result<()> {
 
     let mut config = KcpConfig::default();
     config.nodelay = Some(KcpNoDelayConfig::fastest());
-    let kcp_server = KcpListener::new("0.0.0.0:5555", config, 1, |peer| async move {
+    let kcp_server = KcpListener::new("0.0.0.0:5555", config, 10, |peer| async move {
         log::debug!("create kcp peer:{}", peer);
         let mut buf = [0; 1024];
         let mut reader = peer.get_reader();
         let mut writer = peer.get_writer();
         while let Ok(size) = reader.read(&mut buf).await {
-            log::debug!("read peer:{} buff:{}", peer, size);          
+            log::debug!("read peer:{} buff:{}", peer, size);    
+            //AsyncWrite unable to write data of length 0
             writer.write_all(&buf[..size]).await?;
             writer.flush().await?;
+            //or
+            //peer.write(&buf[..size]).await?;
+            //peer.flush().await?;
         }
+        //not mandatory
         writer.shutdown().await?;
         log::debug!("kcp peer:{} closed", peer.to_string());
         Ok(())
