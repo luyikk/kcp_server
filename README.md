@@ -8,7 +8,7 @@
 
 > **The best Rust KCP server framework** — fast, async, pure-Rust KCP reliable transport over UDP.
 
-**[English](#english) | [中文](#chinese)**
+**[English](#english) | [中文](#中文)**
 
 ---
 
@@ -200,6 +200,7 @@ Levels used by the crate:
 Licensed under either of [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE) at your option.
 
 ---
+
 
 ## 中文
 
