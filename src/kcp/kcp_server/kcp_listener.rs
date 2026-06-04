@@ -1,4 +1,5 @@
 use async_lock::RwLock;
+use bytes::BytesMut;
 use data_rw::Data;
 use std::collections::HashMap;
 use std::error::Error;
@@ -99,7 +100,7 @@ where
                         // 初始化过程中 任何异常将中断udp peer
                         let (conv, kcp_peer) = loop {
                             if let Some(data) = reader.recv().await {
-                                let mut data = data?;
+                                let mut data = BytesMut::from(data?);
                                 if data.len() >= 24 {
                                     decode(&key, &mut data[4..]);
                                     //初始化kcp peer,并跳出 create peer监听逻辑
@@ -131,7 +132,7 @@ where
                                     buff.write_fixed(conv);
                                     buff.write_buf(&data);
                                     // 保存密钥用于创建kcp peer
-                                    key = Some(data);
+                                    key = Some(data.to_vec());
                                     //发回conv和密钥
                                     peer.send(&buff).await?;
                                 }
@@ -155,7 +156,8 @@ where
                         });
 
                         // 读取udp数据包，并写入kcp 直到udp peer 关闭
-                        while let Some(Ok(mut data)) = reader.recv().await {
+                        while let Some(Ok(data)) = reader.recv().await {
+                            let mut data = BytesMut::from(data);
                             if let Err(err) = kcp_peer.input(&mut data, true).await {
                                 log::error!("kcp peer input error:{err}");
                                 break;

@@ -1,5 +1,18 @@
 # Changelog
 
+# 1.1.6
+### Fixed
+* Fix compilation error after `udp_server` upgraded to 1.1: `Bytes` returned by `recv()` is immutable, convert to `BytesMut` where mutation is needed (XOR decode, KCP input).
+* Clippy: replace manual `div_ceil` and `abs_diff` with std methods in `kcp.rs`.
+
+### Changed
+* Pin `udp_server` dependency to `"1.1"` (was `"1"`).
+
+### Added
+* Bilingual README (English / 中文): features table, API overview, configuration reference, project structure.
+* `CLAUDE.md`: codebase documentation for Claude Code agents.
+* Python test scripts in `examples/kcpecho/`: `kcp_client.py` (happy-path echo test) and `kcp_probe.py` (comprehensive 5-probe suite).
+
 # 1.1.5
 ### Features
 * update 1.1.5
